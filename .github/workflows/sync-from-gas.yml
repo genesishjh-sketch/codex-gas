@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -21,8 +23,19 @@ jobs:
         run: npm i -g @google/clasp
 
       - name: Restore clasp credentials
+        shell: bash
         run: |
-          printf "%s" "${{ secrets.CLASPRC_JSON_B64 }}" | base64 -d > ~/.clasprc.json
+          set -euo pipefail
+          echo "${{ secrets.CLASPRC_JSON_B64 }}" | base64 --decode > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+      - name: Verify project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la
+          test -f .clasp.json || (echo "ERROR: .clasp.json missing in repo root" && exit 1)
+          clasp -v
 
       - name: Pull latest from Apps Script
         run: clasp pull

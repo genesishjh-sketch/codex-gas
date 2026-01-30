@@ -19,8 +19,19 @@ jobs:
         run: npm i -g @google/clasp
 
       - name: Restore clasp credentials
+        shell: bash
         run: |
-          printf "%s" "${{ secrets.CLASPRC_JSON_B64 }}" | base64 -d > ~/.clasprc.json
+          set -euo pipefail
+          echo "${{ secrets.CLASPRC_JSON_B64 }}" | base64 --decode > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+      - name: Verify project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la
+          test -f .clasp.json || (echo "ERROR: .clasp.json missing in repo root" && exit 1)
+          clasp -v
 
       - name: Push to Apps Script
         run: clasp push
