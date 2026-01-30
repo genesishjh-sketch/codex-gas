@@ -1,4 +1,4 @@
-﻿name: 앱스크립트 변경분 동기화(PR 생성)
+﻿name: 동기화(PR): GAS → GitHub
 
 on:
   workflow_dispatch:
@@ -31,7 +31,9 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           branch: gas-sync/${{ github.run_id }}
-          title: "앱스크립트 변경분 동기화"
+          title: "GAS → GitHub 동기화"
           commit-message: "sync: pull changes from Apps Script"
           body: |
-            Apps Script 웹 편집기에서 수정한 변경분을 GitHub로 가져온 PR입니다.
+            Apps Script 웹 편집기에서 수정한 변경분을 GitHub에 반영합니다.
+
+

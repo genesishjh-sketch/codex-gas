@@ -1,4 +1,4 @@
-﻿name: 앱스크립트 자동 업로드(배포)
+﻿name: 배포(main): GitHub → GAS
 
 on:
   push:
@@ -24,4 +24,5 @@ jobs:
 
       - name: Push to Apps Script
         run: clasp push
+
 
