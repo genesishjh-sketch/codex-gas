@@ -1,4 +1,4 @@
-﻿name: Sync from Apps Script (create PR)
+﻿name: 앱스크립트 변경분 동기화(PR 생성)
 
 on:
   workflow_dispatch:
@@ -35,3 +35,4 @@ jobs:
           commit-message: "sync: pull changes from Apps Script"
           body: |
             Apps Script 웹 편집기에서 수정한 변경분을 GitHub로 되돌린 PR입니다.
+
