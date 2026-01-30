@@ -1,4 +1,4 @@
-﻿name: 동기화(PR): GAS → GitHub
+name: "동기화(수동 PR) · GAS → GitHub"
 
 on:
   workflow_dispatch:
@@ -22,19 +22,27 @@ jobs:
       - name: Install clasp
         run: npm i -g @google/clasp
 
-      - name: Restore clasp credentials
+      - name: Restore clasp credentials (robust)
         shell: bash
+        env:
+          CLASPRC_JSON_B64: ${{ secrets.CLASPRC_JSON_B64 }}
         run: |
           set -euo pipefail
-          echo "${{ secrets.CLASPRC_JSON_B64 }}" | base64 --decode > "$HOME/.clasprc.json"
-          chmod 600 "$HOME/.clasprc.json"
+          python3 - <<'PY'
+          import os, base64, pathlib
+          b64 = os.environ["CLASPRC_JSON_B64"].strip()
+          data = base64.b64decode(b64)
+          p = pathlib.Path.home()/".clasprc.json"
+          p.write_bytes(data)
+          p.chmod(0o600)
+          print("wrote", p)
+          PY
 
       - name: Verify project files
         shell: bash
         run: |
           set -euo pipefail
-          ls -la
-          test -f .clasp.json || (echo "ERROR: .clasp.json missing in repo root" && exit 1)
+          test -f .clasp.json
           clasp -v
 
       - name: Pull latest from Apps Script
