@@ -1,0 +1,26 @@
+﻿name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install clasp
+        run: npm i -g @google/clasp
+
+      - name: Restore clasp credentials
+        run: |
+          printf "%s" "${{ secrets.CLASPRC_JSON_B64 }}" | base64 -d > ~/.clasprc.json
+
+      - name: Push to Apps Script
+        run: clasp push
