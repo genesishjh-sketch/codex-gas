@@ -34,6 +34,4 @@ jobs:
           title: "GAS → GitHub 동기화"
           commit-message: "sync: pull changes from Apps Script"
           body: |
-            Apps Script 웹 편집기에서 수정한 변경분을 GitHub에 반영합니다.
-
-
+            Apps Script 웹 편집기에서 수정한 변경분을 GitHub에 반영하는 PR입니다.
