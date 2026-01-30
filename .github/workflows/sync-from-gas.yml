@@ -31,8 +31,7 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           branch: gas-sync/${{ github.run_id }}
-          title: "Sync from Apps Script editor"
+          title: "앱스크립트 변경분 동기화"
           commit-message: "sync: pull changes from Apps Script"
           body: |
-            Apps Script 웹 편집기에서 수정한 변경분을 GitHub로 되돌린 PR입니다.
-
+            Apps Script 웹 편집기에서 수정한 변경분을 GitHub로 가져온 PR입니다.

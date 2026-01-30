@@ -1,4 +1,4 @@
-﻿name: Deploy to Google Apps Script
+﻿name: 앱스크립트 자동 업로드(배포)
 
 on:
   push:
@@ -24,3 +24,4 @@ jobs:
 
       - name: Push to Apps Script
         run: clasp push
+
