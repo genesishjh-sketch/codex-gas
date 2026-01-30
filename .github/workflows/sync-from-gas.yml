@@ -1,0 +1,37 @@
+﻿name: Sync from Apps Script (create PR)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install clasp
+        run: npm i -g @google/clasp
+
+      - name: Restore clasp credentials
+        run: |
+          printf "%s" "${{ secrets.CLASPRC_JSON_B64 }}" | base64 -d > ~/.clasprc.json
+
+      - name: Pull latest from Apps Script
+        run: clasp pull
+
+      - name: Create Pull Request with changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: gas-sync/${{ github.run_id }}
+          title: "Sync from Apps Script editor"
+          commit-message: "sync: pull changes from Apps Script"
+          body: |
+            Apps Script 웹 편집기에서 수정한 변경분을 GitHub로 되돌린 PR입니다.
