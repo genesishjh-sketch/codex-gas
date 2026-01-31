@@ -17,7 +17,7 @@ function onOpen() {
     .addSeparator()
     .addItem('👤 연락처 동기화', 'runContactSync')
     .addSeparator()
-    .addItem('🧪 실행 진단', 'runDiagnostics')
+    .addItem('🧪 오류파악', 'runDiagnostics')
     .addToUi();
 
   // ✅ “열 때만” 진행 체크 (조용히)
@@ -108,6 +108,10 @@ function runDiagnostics() {
 
   var stopCtl = makeStopController_();
   var total = 0, valid = 0, invalid = 0, closed = 0, active = 0, emptyName = 0;
+  var invalidSamples = [];
+  var statusCounts = {};
+  var statusSamples = {};
+  var emptyStatus = 0;
 
   for (var r = startRow; r <= lastRow; r += blockHeight) {
     if (stopCtl.check(sheet, r)) break;
@@ -121,8 +125,22 @@ function runDiagnostics() {
 
     if (isClosedBlock_(sheet, r)) closed++;
 
-    var status = (typeof findStatusInRow_ === "function") ? findStatusInRow_(sheet, r) : "";
+    var status = (typeof findStatusInBlock_ === "function") ? findStatusInBlock_(sheet, r) :
+      ((typeof findStatusInRow_ === "function") ? findStatusInRow_(sheet, r) : "");
+    var statusKey = status || "(없음)";
+    statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
+    if (!status) emptyStatus++;
+
+    if (!statusSamples[statusKey]) statusSamples[statusKey] = [];
+    if (statusSamples[statusKey].length < 3) {
+      statusSamples[statusKey].push(r);
+    }
+
     if (typeof isActiveStatusForDrive_ === "function" && isActiveStatusForDrive_(status)) active++;
+
+    if (!isValidName(nameVal) && invalidSamples.length < 5) {
+      invalidSamples.push("Row " + r + ": " + nameVal);
+    }
   }
 
   var keyOk = true;
@@ -140,6 +158,20 @@ function runDiagnostics() {
   msg.push("- 프로젝트명 빈칸 블록: " + emptyName);
   msg.push("- 완료/취소 블록: " + closed);
   msg.push("- 진행 상태(드라이브 체크 대상): " + active);
+  msg.push("- 상태 없음 블록: " + emptyStatus);
+  msg.push("");
+  msg.push("✅ 상태 분포(상위)");
+  Object.keys(statusCounts).sort(function(a, b){
+    return statusCounts[b] - statusCounts[a];
+  }).slice(0, 6).forEach(function(key) {
+    msg.push("  - " + key + ": " + statusCounts[key] + " (예: " + statusSamples[key].join(", ") + ")");
+  });
+
+  if (invalidSamples.length > 0) {
+    msg.push("");
+    msg.push("⚠️ 무효 프로젝트명 예시(최대 5개)");
+    invalidSamples.forEach(function(v) { msg.push("  - " + v); });
+  }
   msg.push("- 카카오키 상태: " + (keyOk ? "OK" : "⚠️ 확인 필요"));
 
   ui.alert(msg.join("\n"));
