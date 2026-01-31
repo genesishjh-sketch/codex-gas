@@ -121,7 +121,8 @@ function runDiagnostics() {
 
     if (isClosedBlock_(sheet, r)) closed++;
 
-    var status = (typeof findStatusInRow_ === "function") ? findStatusInRow_(sheet, r) : "";
+    var status = (typeof findStatusInBlock_ === "function") ? findStatusInBlock_(sheet, r) :
+      ((typeof findStatusInRow_ === "function") ? findStatusInRow_(sheet, r) : "");
     if (typeof isActiveStatusForDrive_ === "function" && isActiveStatusForDrive_(status)) active++;
   }
 
