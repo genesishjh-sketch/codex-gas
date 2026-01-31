@@ -44,6 +44,20 @@ const CONFIG = {
 
   /** 연락처 생성 옵션 */
   CONTACT_SKIP_IF_NO_PHONE: true,
+  /** 프로젝트명 유효성 검사 무시하고 연락처 동기화 */
+  CONTACT_IGNORE_NAME_VALIDATION: false,
+
+  /** ✅ 프로젝트명 판정 옵션 */
+  NAME_VALIDATION: {
+    /** 접두어 목록(비어 있으면 접두어 강제하지 않음) */
+    prefixes: [],
+    /** "님"과 같은 접미어 강제 여부 */
+    requireSuffix: false,
+    /** 접미어 기본값 */
+    suffix: "님",
+    /** 접두어/접미어 무시하고 항상 유효로 처리 */
+    allowAny: false
+  },
 
   /** ✅ (카톡 보고서/DB) 홈스타일링 전용 컬럼: 라벨 G / 예정 H / 완료 I */
   HOME_TASK: {

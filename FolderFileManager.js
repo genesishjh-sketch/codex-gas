@@ -35,6 +35,8 @@ function createFoldersBatch(isSilent, force) {
 
       if (isClosedBlock_(sheet, r)) { skipCount++; continue; }
 
+      var projectFolder = getOrCreateProjectFolder_(parentFolder, sheet, r);
+
       // rows: r+1..r+4 (R5-8, R13-16, ...)
       for (var i = 1; i <= 4; i++) {
         var row = r + i;
@@ -55,8 +57,8 @@ function createFoldersBatch(isSilent, force) {
           continue;
         }
 
-        var folders = parentFolder.getFoldersByName(label);
-        var folder = folders.hasNext() ? folders.next() : parentFolder.createFolder(label);
+        var folders = projectFolder.getFoldersByName(label);
+        var folder = folders.hasNext() ? folders.next() : projectFolder.createFolder(label);
         urlCell.setValue(folder.getUrl());
         processedCount++;
         successList.push(label);
@@ -71,4 +73,33 @@ function createFoldersBatch(isSilent, force) {
   if (!isSilent) SpreadsheetApp.getUi().alert("Folder create done\n" + summary);
 
   return { summary: summary, successList: successList, failedList: failedList };
+}
+
+function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
+  var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, 3);
+  var nameVal = (nameCell.getDisplayValue() || "").toString().trim();
+
+  var dateCell = sheet.getRange(blockStartRow + 4, 4);
+  var dateVal = dateCell.getValue();
+  var dateStr = formatProjectDate_(dateVal, dateCell);
+
+  var projectName = (dateStr ? dateStr + " " : "") + nameVal;
+  projectName = projectName.trim() || "프로젝트";
+
+  var existing = parentFolder.getFoldersByName(projectName);
+  return existing.hasNext() ? existing.next() : parentFolder.createFolder(projectName);
+}
+
+function formatProjectDate_(value, cell) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyMMdd");
+  }
+  var display = (cell && cell.getDisplayValue) ? cell.getDisplayValue() : "";
+  display = (display || "").toString().trim();
+  if (!display) return "";
+
+  var digits = display.replace(/[^\d]/g, "");
+  if (digits.length === 8) return digits.slice(2);
+  if (digits.length === 6) return digits;
+  return display;
 }

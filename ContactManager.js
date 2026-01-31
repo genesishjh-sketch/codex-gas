@@ -99,7 +99,8 @@ function syncContactsBatch(isSilent) {
     if (isClosedBlock_(sheet, r)) { skipped++; continue; }
 
     var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
-    if (!isValidName(nameVal)) continue;
+    var ignoreNameCheck = !!(CONFIG && CONFIG.CONTACT_IGNORE_NAME_VALIDATION);
+    if (!ignoreNameCheck && !isValidName(nameVal)) continue;
 
     // ✅ 고정 셀에서만 전화번호 가져옴
     var phone = findPhoneInBlock_(sheet, r, blockHeight);
