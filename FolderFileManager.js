@@ -76,7 +76,8 @@ function createFoldersBatch(isSilent, force) {
 }
 
 function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
-  var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, 3);
+var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, 3);
+
   var nameVal = (nameCell.getDisplayValue() || "").toString().trim();
 
   var dateCell = sheet.getRange(blockStartRow + 4, 4);
