@@ -41,8 +41,8 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
     var pname = findProjectNameInRow_(sheet, r);
     if (!isValidName(pname)) continue;
 
-    // 상태 판별(행 전체에서 키워드 검색)
-    var status = findStatusInRow_(sheet, r);
+    // 상태 판별(블록 전체에서 키워드 검색)
+    var status = findStatusInBlock_(sheet, r);
 
     // “열 때(진행만)” 모드면 진행 단계만 검사
     if (!includeAll) {
@@ -295,6 +295,37 @@ function findStatusInRow_(sheet, blockStartRow) {
   for (var i = 0; i < candidates.length; i++) {
     for (var c = 0; c < vals.length; c++) {
       if ((vals[c] || "").toString().trim() === candidates[i]) return candidates[i];
+    }
+  }
+  return "";
+}
+
+function findStatusInBlock_(sheet, blockStartRow) {
+  var maxCols = Math.min(sheet.getLastColumn(), 220);
+  var blockHeight = getBlockHeight_(sheet);
+  var lastRow = sheet.getLastRow();
+  var endRow = Math.min(lastRow, blockStartRow + blockHeight - 1);
+  if (endRow < blockStartRow) return "";
+
+  var vals = sheet.getRange(blockStartRow, 1, endRow - blockStartRow + 1, maxCols).getDisplayValues();
+  var candidates = [
+    "취소",
+    "완료",
+    "세팅완료(에비대기)",
+    "대기",
+    "세팅 대기",
+    "엑셀 작업",
+    "디자인 작업",
+    "실측대기",
+    "진행"
+  ];
+
+  for (var i = 0; i < candidates.length; i++) {
+    var target = candidates[i];
+    for (var r = 0; r < vals.length; r++) {
+      for (var c = 0; c < vals[r].length; c++) {
+        if ((vals[r][c] || "").toString().trim() === target) return target;
+      }
     }
   }
   return "";
