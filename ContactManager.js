@@ -111,6 +111,14 @@ function getContactsServiceState_() {
   }
 }
 
+function getContactsUnavailableMessage_(reason, actionLabel) {
+  var label = actionLabel || "연락처 작업";
+  if (reason === "contacts_deprecated") {
+    return "⚠️ Contacts API가 종료되어 " + label + "을(를) 건너뜁니다. People API로 이전이 필요합니다.";
+  }
+  return "⚠️ ContactsApp을 사용할 수 없어 " + label + "을(를) 건너뜁니다.";
+}
+
 function findContactsByPhone_(normalizedPhone) {
   if (!normalizedPhone) return [];
   var state = getContactsServiceState_();
@@ -179,10 +187,7 @@ function syncContactsBatch(isSilent) {
   var contactsState = getContactsServiceState_();
   if (!contactsState.ok) {
     if (!isSilent) {
-      var msg = (contactsState.reason === "contacts_deprecated") ?
-        "⚠️ Contacts API가 종료되어 연락처 동기화를 건너뜁니다. People API로 이전이 필요합니다." :
-        "⚠️ ContactsApp을 사용할 수 없어 연락처 동기화를 건너뜁니다.";
-      SpreadsheetApp.getUi().alert(msg);
+      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(contactsState.reason, "연락처 동기화"));
     }
     return { summary: contactsState.reason || "ContactsApp unavailable" };
   }
@@ -306,10 +311,7 @@ function auditContactLog_(isSilent) {
   var state = getContactsServiceState_();
   if (!state.ok) {
     if (!isSilent) {
-      var msg = (state.reason === "contacts_deprecated") ?
-        "⚠️ Contacts API가 종료되어 점검을 건너뜁니다. People API로 이전이 필요합니다." :
-        "⚠️ ContactsApp을 사용할 수 없어 점검을 건너뜁니다.";
-      SpreadsheetApp.getUi().alert(msg);
+      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(state.reason, "연락처 점검"));
     }
     return { summary: state.reason || "ContactsApp unavailable" };
   }
