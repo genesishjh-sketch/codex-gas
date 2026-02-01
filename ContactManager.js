@@ -176,6 +176,17 @@ function syncContactsBatch(isSilent) {
   var lastRow = sheet.getLastRow();
   if (lastRow < CONFIG.START_ROW) return { summary: "데이터 없음" };
 
+  var contactsState = getContactsServiceState_();
+  if (!contactsState.ok) {
+    if (!isSilent) {
+      var msg = (contactsState.reason === "contacts_deprecated") ?
+        "⚠️ Contacts API가 종료되어 연락처 동기화를 건너뜁니다. People API로 이전이 필요합니다." :
+        "⚠️ ContactsApp을 사용할 수 없어 연락처 동기화를 건너뜁니다.";
+      SpreadsheetApp.getUi().alert(msg);
+    }
+    return { summary: contactsState.reason || "ContactsApp unavailable" };
+  }
+
   var stopCtl = makeStopController_();
 
   var logSheet = getContactLogSheet_();

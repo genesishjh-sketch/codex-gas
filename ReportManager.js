@@ -20,6 +20,14 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
     if (!isSilent) SpreadsheetApp.getUi().alert("⚠️ DriveApp을 사용할 수 없어 드라이브 체크를 중단합니다.");
     return { updated: 0, skipped: 0, errors: 0 };
   }
+  try {
+    DriveApp.getRootFolder();
+  } catch (e) {
+    if (!isSilent) {
+      SpreadsheetApp.getUi().alert("⚠️ DriveApp 권한이 없어 드라이브 체크를 중단합니다.\n" + (e && e.message ? e.message : e));
+    }
+    return { updated: 0, skipped: 0, errors: 1 };
+  }
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
