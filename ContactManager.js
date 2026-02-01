@@ -50,6 +50,41 @@ function findPhoneInBlock_(sheet, blockStartRow, blockHeight) {
   return (m && m[0]) ? normalizePhone_(m[0]) : "";
 }
 
+function getContactBlockInfo_(sheet, blockStartRow, blockHeight, nameVal) {
+  var nameValue = (typeof nameVal !== "undefined") ? nameVal : sheet.getRange(blockStartRow, CONFIG.POS_NAME.col).getDisplayValue();
+  var phone = findPhoneInBlock_(sheet, blockStartRow, blockHeight);
+  var normalized = normalizePhone_(phone);
+  var f4 = sheet.getRange(blockStartRow + CONFIG.POS_ADDR.row, CONFIG.POS_ADDR.col).getDisplayValue();
+  var f6 = sheet.getRange(blockStartRow + CONFIG.POS_ADDR_EXTRA.row, CONFIG.POS_ADDR_EXTRA.col).getDisplayValue();
+  var addressLine = ((f4 || "").toString().trim() + " " + (f6 || "").toString().trim()).replace(/\s+/g, " ").trim();
+  var mapUrl = sheet.getRange(blockStartRow + CONFIG.POS_MAP.row, CONFIG.POS_MAP.col).getDisplayValue();
+  var noVal = sheet.getRange(blockStartRow, CONFIG.POS_NO.col).getDisplayValue();
+  var projectLabel = (noVal ? (noVal + " ") : "") + nameValue;
+
+  return {
+    nameVal: nameValue,
+    phone: phone,
+    normalized: normalized,
+    addressLine: addressLine,
+    mapUrl: mapUrl,
+    projectLabel: projectLabel
+  };
+}
+
+function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existedFlag) {
+  pendingAppends.push([
+    info.normalized || "",
+    info.nameVal || "",
+    info.projectLabel || "",
+    info.addressLine || "",
+    info.mapUrl || "",
+    result,
+    existedFlag || "",
+    sourceRow,
+    new Date()
+  ]);
+}
+
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
 
@@ -100,35 +135,35 @@ function syncContactsBatch(isSilent) {
 
     var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
     var ignoreNameCheck = !!(CONFIG && CONFIG.CONTACT_IGNORE_NAME_VALIDATION);
-    if (!ignoreNameCheck && !isValidName(nameVal)) continue;
+    if (!ignoreNameCheck && !isValidName(nameVal)) {
+      if (CONFIG.CONTACT_LOG_SKIP_REASONS) {
+        var invalidInfo = getContactBlockInfo_(sheet, r, blockHeight, nameVal);
+        queueContactLogAppend_(pendingAppends, invalidInfo, "skip: invalid_name", r, "");
+      }
+      continue;
+    }
 
-    // ✅ 고정 셀에서만 전화번호 가져옴
-    var phone = findPhoneInBlock_(sheet, r, blockHeight);
+    var info = getContactBlockInfo_(sheet, r, blockHeight, nameVal);
+    var phone = info.phone;
 
     if (CONFIG.CONTACT_SKIP_IF_NO_PHONE && !phone) {
+      if (CONFIG.CONTACT_LOG_SKIP_REASONS) {
+        queueContactLogAppend_(pendingAppends, info, "skip: no_phone", r, "");
+      }
       skipped++;
       continue;
     }
 
-    var normalized = normalizePhone_(phone);
-
-    // ✅ 주소(F4 + 공백 + F6) / 메모(지도 URL)
-    var f4 = sheet.getRange(r + CONFIG.POS_ADDR.row, CONFIG.POS_ADDR.col).getDisplayValue();
-    var f6 = sheet.getRange(r + CONFIG.POS_ADDR_EXTRA.row, CONFIG.POS_ADDR_EXTRA.col).getDisplayValue();
-    var addressLine = ((f4 || "").toString().trim() + " " + (f6 || "").toString().trim()).replace(/\s+/g, " ").trim();
-    var mapUrl = sheet.getRange(r + CONFIG.POS_MAP.row, CONFIG.POS_MAP.col).getDisplayValue();
-
-    var noVal = sheet.getRange(r, CONFIG.POS_NO.col).getDisplayValue();
-    var projectLabel = (noVal ? (noVal + " ") : "") + nameVal;
+    var normalized = info.normalized;
 
     // ✅ 로그에 있으면 스킵
-    if (normalized && logMap[normalized]) {
+    var logRowNum = normalized ? logMap[normalized] : null;
+    if (logRowNum && CONFIG.CONTACT_SKIP_IF_LOGGED !== false) {
       cached++;
-      var rowNum = logMap[normalized];
       pendingUpdates.push({
-        row: rowNum,
+        row: logRowNum,
         values: [
-          normalized, nameVal, projectLabel, addressLine, mapUrl,
+          normalized, info.nameVal, info.projectLabel, info.addressLine, info.mapUrl,
           "cached_skip", "", r, new Date()
         ]
       });
@@ -136,26 +171,28 @@ function syncContactsBatch(isSilent) {
     }
 
     try {
-      var res = ensureContact_(nameVal, normalized, addressLine, mapUrl);
+      var res = ensureContact_(info.nameVal, normalized, info.addressLine, info.mapUrl);
       if (res.skipped) { skipped++; continue; }
 
       if (res.existed) existed++; else created++;
 
-      var logRow = [
-        normalized, nameVal, projectLabel, addressLine, mapUrl,
-        "ok", res.existed ? "Y" : "N", r, new Date()
-      ];
-
-      logMap[normalized] = -1;
-      pendingAppends.push(logRow);
+      if (logRowNum) {
+        pendingUpdates.push({
+          row: logRowNum,
+          values: [
+            normalized, info.nameVal, info.projectLabel, info.addressLine, info.mapUrl,
+            "ok", res.existed ? "Y" : "N", r, new Date()
+          ]
+        });
+      } else {
+        logMap[normalized] = -1;
+        queueContactLogAppend_(pendingAppends, info, "ok", r, res.existed ? "Y" : "N");
+      }
 
     } catch (e) {
       failed++;
       if (normalized) {
-        pendingAppends.push([
-          normalized, nameVal, projectLabel, addressLine, mapUrl,
-          "fail: " + (e && e.message ? e.message : e), "", r, new Date()
-        ]);
+        queueContactLogAppend_(pendingAppends, info, "fail: " + (e && e.message ? e.message : e), r, "");
       }
     }
   }
