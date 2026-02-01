@@ -16,6 +16,18 @@ function checkFolderFilesColor(isSilent, options) {
 
 /** === 내부: 드라이브 체크 본체 === */
 function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
+  if (typeof DriveApp === "undefined") {
+    if (!isSilent) SpreadsheetApp.getUi().alert("⚠️ DriveApp을 사용할 수 없어 드라이브 체크를 중단합니다.");
+    return { updated: 0, skipped: 0, errors: 0 };
+  }
+  try {
+    DriveApp.getRootFolder();
+  } catch (e) {
+    if (!isSilent) {
+      SpreadsheetApp.getUi().alert("⚠️ DriveApp 권한이 없어 드라이브 체크를 중단합니다.\n" + (e && e.message ? e.message : e));
+    }
+    return { updated: 0, skipped: 0, errors: 1 };
+  }
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
@@ -75,7 +87,7 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
     }
 
     var folderId = extractIdFromUrl(folderUrl);
-    if (!folderId) {
+    if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
       urlCell.setBackground("#ffffff");
       logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_NO_ID", "폴더 ID 추출 실패"]);
       continue;

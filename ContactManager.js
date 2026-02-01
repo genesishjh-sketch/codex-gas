@@ -85,9 +85,63 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
   ]);
 }
 
+var CONTACTS_SERVICE_STATE_ = null;
+
+function isContactsDeprecatedError_(error) {
+  var msg = String(error && (error.message || error) || "");
+  return msg.indexOf("Contacts API has been deprecated") >= 0;
+}
+
+function getContactsServiceState_() {
+  if (CONTACTS_SERVICE_STATE_) return CONTACTS_SERVICE_STATE_;
+  if (typeof ContactsApp === "undefined") {
+    CONTACTS_SERVICE_STATE_ = { ok: false, reason: "contacts_unavailable" };
+    return CONTACTS_SERVICE_STATE_;
+  }
+  try {
+    ContactsApp.getContacts();
+    CONTACTS_SERVICE_STATE_ = { ok: true };
+    return CONTACTS_SERVICE_STATE_;
+  } catch (e) {
+    if (isContactsDeprecatedError_(e)) {
+      CONTACTS_SERVICE_STATE_ = { ok: false, reason: "contacts_deprecated" };
+      return CONTACTS_SERVICE_STATE_;
+    }
+    throw e;
+  }
+}
+
+function getContactsUnavailableMessage_(reason, actionLabel) {
+  var label = actionLabel || "연락처 작업";
+  if (reason === "contacts_deprecated") {
+    return "⚠️ Contacts API가 종료되어 " + label + "을(를) 건너뜁니다. People API로 이전이 필요합니다.";
+  }
+  return "⚠️ ContactsApp을 사용할 수 없어 " + label + "을(를) 건너뜁니다.";
+}
+
 function findContactsByPhone_(normalizedPhone) {
   if (!normalizedPhone) return [];
-  if (typeof ContactsApp === "undefined") return [];
+  var state = getContactsServiceState_();
+  if (!state.ok) return [];
+  if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
+    return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
+  }
+
+  var contacts = ContactsApp.getContacts();
+  var matches = [];
+  for (var i = 0; i < contacts.length; i++) {
+    var phones = contacts[i].getPhones();
+    for (var j = 0; j < phones.length; j++) {
+      var value = phones[j].getPhoneNumber();
+      if (normalizePhone_(value) === normalizedPhone) {
+        matches.push(contacts[i]);
+        break;
+      }
+    }
+  }
+  return matches;
+}
+
   if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
     return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
   }
@@ -109,9 +163,10 @@ function findContactsByPhone_(normalizedPhone) {
 
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
-  if (typeof ContactsApp === "undefined") {
-    return { ok: false, skipped: true, reason: "contacts_unavailable" };
-  }
+function ensureContact_(displayName, phone, addressLine, mapUrl) {
+  if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
+  var state = getContactsServiceState_();
+  if (!state.ok) return { ok: false, skipped: true, reason: state.reason };
 
   var normalized = normalizePhone_(phone);
   var found = findContactsByPhone_(normalized);
@@ -121,12 +176,45 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (addressLine) notes += "주소: " + addressLine;
   if (mapUrl) notes += (notes ? "\n" : "") + "지도: " + mapUrl;
 
-  var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
-  c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
+  try {
+    var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
+    c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
+
+    try {
+      if (addressLine) c.addAddress(ContactsApp.Field.HOME_ADDRESS, addressLine);
+    } catch (_) {}
+  } catch (e) {
+    if (isContactsDeprecatedError_(e)) {
+      return { ok: false, skipped: true, reason: "contacts_deprecated" };
+    }
+    throw e;
+  }
+
+  return { ok: true, existed: false };
+}
+
+
+  var normalized = normalizePhone_(phone);
+  var found = findContactsByPhone_(normalized);
+  if (found && found.length > 0) return { ok: true, existed: true };
+
+  var notes = "";
+  if (addressLine) notes += "주소: " + addressLine;
+  if (mapUrl) notes += (notes ? "\n" : "") + "지도: " + mapUrl;
 
   try {
-    if (addressLine) c.addAddress(ContactsApp.Field.HOME_ADDRESS, addressLine);
-  } catch (_) {}
+    var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
+    c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
+
+    try {
+      if (addressLine) c.addAddress(ContactsApp.Field.HOME_ADDRESS, addressLine);
+    } catch (_) {}
+  } catch (e) {
+    if (isContactsDeprecatedError_(e)) {
+      return { ok: false, skipped: true, reason: "contacts_deprecated" };
+    }
+    throw e;
+  }
 
   return { ok: true, existed: false };
 }
@@ -142,6 +230,14 @@ function syncContactsBatch(isSilent) {
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
   if (lastRow < CONFIG.START_ROW) return { summary: "데이터 없음" };
+
+  var contactsState = getContactsServiceState_();
+  if (!contactsState.ok) {
+    if (!isSilent) {
+      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(contactsState.reason, "연락처 동기화"));
+    }
+    return { summary: contactsState.reason || "ContactsApp unavailable" };
+  }
 
   var stopCtl = makeStopController_();
 
@@ -259,9 +355,18 @@ function syncContactsBatch(isSilent) {
  */
 function auditContactLog_(isSilent) {
   var logSheet = getContactLogSheet_();
-  if (typeof ContactsApp === "undefined") {
-    if (!isSilent) SpreadsheetApp.getUi().alert("⚠️ ContactsApp을 사용할 수 없어 점검을 건너뜁니다.");
-    return { summary: "ContactsApp unavailable" };
+function auditContactLog_(isSilent) {
+  var logSheet = getContactLogSheet_();
+  var state = getContactsServiceState_();
+  if (!state.ok) {
+    if (!isSilent) {
+      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(state.reason, "연락처 점검"));
+    }
+    return { summary: state.reason || "ContactsApp unavailable" };
+  }
+  // ... 이하 동일
+}
+
   }
   var lastRow = logSheet.getLastRow();
   if (lastRow < 2) {
