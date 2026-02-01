@@ -109,6 +109,9 @@ function findContactsByPhone_(normalizedPhone) {
 
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
+  if (typeof ContactsApp === "undefined") {
+    return { ok: false, skipped: true, reason: "contacts_unavailable" };
+  }
 
   var normalized = normalizePhone_(phone);
   var found = findContactsByPhone_(normalized);
