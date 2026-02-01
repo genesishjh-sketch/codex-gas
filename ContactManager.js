@@ -87,6 +87,7 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
 
 function findContactsByPhone_(normalizedPhone) {
   if (!normalizedPhone) return [];
+  if (typeof ContactsApp === "undefined") return [];
   if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
     return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
   }
