@@ -197,7 +197,13 @@ function syncContactsBatch(isSilent) {
 
     try {
       var res = ensureContact_(info.nameVal, normalized, info.addressLine, info.mapUrl);
-      if (res.skipped) { skipped++; continue; }
+      if (res.skipped) {
+        if (CONFIG.CONTACT_LOG_SKIP_REASONS && res.reason) {
+          queueContactLogAppend_(pendingAppends, info, "skip: " + res.reason, r, "");
+        }
+        skipped++;
+        continue;
+      }
 
       if (res.existed) existed++; else created++;
 
