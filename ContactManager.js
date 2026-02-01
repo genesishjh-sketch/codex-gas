@@ -253,6 +253,10 @@ function syncContactsBatch(isSilent) {
  */
 function auditContactLog_(isSilent) {
   var logSheet = getContactLogSheet_();
+  if (typeof ContactsApp === "undefined") {
+    if (!isSilent) SpreadsheetApp.getUi().alert("⚠️ ContactsApp을 사용할 수 없어 점검을 건너뜁니다.");
+    return { summary: "ContactsApp unavailable" };
+  }
   var lastRow = logSheet.getLastRow();
   if (lastRow < 2) {
     if (!isSilent) SpreadsheetApp.getUi().alert("ℹ️ 연락처_log 데이터가 없습니다.");
