@@ -221,3 +221,72 @@ function syncContactsBatch(isSilent) {
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 동기화 완료\n" + summary);
   return { summary: summary };
 }
+
+/**
+ * ✅ 연락처_log 기준 실재 연락처 존재 여부 검사
+ * - 연락처_log에 있으나 ContactsApp에 없으면 RESULT를 missing_in_contacts로 표기
+ */
+function auditContactLog_(isSilent) {
+  var logSheet = getContactLogSheet_();
+  var lastRow = logSheet.getLastRow();
+  if (lastRow < 2) {
+    if (!isSilent) SpreadsheetApp.getUi().alert("ℹ️ 연락처_log 데이터가 없습니다.");
+    return { summary: "로그 데이터 없음" };
+  }
+
+  var data = logSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  var updates = [];
+  var checked = 0;
+  var missing = 0;
+  var present = 0;
+  var skipped = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var phone = (row[0] || "").toString().trim();
+    if (!phone) {
+      skipped++;
+      continue;
+    }
+    var normalized = normalizePhone_(phone);
+    checked++;
+
+    var found = ContactsApp.getContactsByPhoneNumber(normalized);
+    if (found && found.length > 0) {
+      present++;
+      continue;
+    }
+
+    missing++;
+    updates.push({
+      row: i + 2,
+      values: [
+        normalized,
+        row[1] || "",
+        row[2] || "",
+        row[3] || "",
+        row[4] || "",
+        "missing_in_contacts",
+        row[6] || "",
+        row[7] || "",
+        new Date()
+      ]
+    });
+  }
+
+  for (var u = 0; u < updates.length; u++) {
+    var item = updates[u];
+    try {
+      logSheet.getRange(item.row, 1, 1, 9).setValues([item.values]);
+    } catch (_) {}
+  }
+
+  var summary =
+    "검사 " + checked +
+    " / 존재 " + present +
+    " / 누락 " + missing +
+    " / 스킵 " + skipped;
+
+  if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 로그 점검 완료\n" + summary);
+  return { summary: summary };
+}

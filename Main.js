@@ -16,6 +16,7 @@ function onOpen() {
     .addItem('📅 금주 일정표 만들기', 'generateWeeklyCalendar')
     .addSeparator()
     .addItem('👤 연락처 동기화', 'runContactSync')
+    .addItem('🔍 연락처 로그 점검', 'runContactAudit')
     .addSeparator()
     .addItem('🧪 오류파악', 'runDiagnostics')
     .addToUi();
@@ -64,6 +65,14 @@ function runContactSync() {
     return;
   }
   syncContactsBatch(false);
+}
+
+function runContactAudit() {
+  if (typeof auditContactLog_ !== "function") {
+    SpreadsheetApp.getUi().alert("⚠️ auditContactLog_ 함수가 없습니다.");
+    return;
+  }
+  auditContactLog_(false);
 }
 
 /** 드라이브 체크: 진행만(열 때) */
