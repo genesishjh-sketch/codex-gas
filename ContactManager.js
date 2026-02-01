@@ -24,10 +24,14 @@ function loadContactLogMap_(logSheet) {
   var last = logSheet.getLastRow();
   if (last < 2) return map;
 
-  var phones = logSheet.getRange(2, 1, last - 1, 1).getValues();
-  for (var i = 0; i < phones.length; i++) {
-    var p = (phones[i][0] || "").toString().trim();
-    if (p) map[p] = i + 2;
+  var rows = logSheet.getRange(2, 1, last - 1, 6).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    var p = (rows[i][0] || "").toString().trim();
+    if (!p) continue;
+    map[p] = {
+      row: i + 2,
+      result: (rows[i][5] || "").toString().trim()
+    };
   }
   return map;
 }
@@ -99,7 +103,8 @@ function syncContactsBatch(isSilent) {
     if (isClosedBlock_(sheet, r)) { skipped++; continue; }
 
     var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
-    if (!isValidName(nameVal)) continue;
+    var ignoreNameCheck = !!(CONFIG && CONFIG.CONTACT_IGNORE_NAME_VALIDATION);
+    if (!ignoreNameCheck && !isValidName(nameVal)) continue;
 
     // ✅ 고정 셀에서만 전화번호 가져옴
     var phone = findPhoneInBlock_(sheet, r, blockHeight);
@@ -121,9 +126,9 @@ function syncContactsBatch(isSilent) {
     var projectLabel = (noVal ? (noVal + " ") : "") + nameVal;
 
     // ✅ 로그에 있으면 스킵
-    if (normalized && logMap[normalized]) {
+    if (normalized && logMap[normalized] && shouldSkipContactByLog_(logMap[normalized])) {
       cached++;
-      var rowNum = logMap[normalized];
+      var rowNum = logMap[normalized].row;
       pendingUpdates.push({
         row: rowNum,
         values: [
@@ -182,4 +187,10 @@ function syncContactsBatch(isSilent) {
 
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 동기화 완료\n" + summary);
   return { summary: summary };
+}
+
+function shouldSkipContactByLog_(entry) {
+  if (!entry || !entry.result) return false;
+  var r = entry.result.toLowerCase();
+  return (r === "ok" || r === "cached_skip");
 }

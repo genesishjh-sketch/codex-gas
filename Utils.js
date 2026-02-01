@@ -18,14 +18,29 @@ function isValidName(nameVal) {
   var s = String(nameVal).trim();
   if (!s || s === "#N/A") return false;
 
-  // ✅ 시작 접두어 제한(오탐 방지)
-  var okPrefix = /^(멱살반|반멱살|스타일링대행)\b/.test(s);
-  if (!okPrefix) return false;
+  var validation = (typeof CONFIG !== "undefined" && CONFIG.NAME_VALIDATION) ? CONFIG.NAME_VALIDATION : {};
+  if (validation && validation.allowAny) return true;
 
-  // ✅ "님" 포함
-  if (s.indexOf("님") === -1) return false;
+  var suffix = (validation && validation.suffix) ? validation.suffix : "님";
+  var requireSuffix = !!(validation && validation.requireSuffix);
+  var prefixes = (validation && validation.prefixes) ? validation.prefixes : [];
 
-  // (동네) 괄호는 선택(있으면 더 안정적)
+  var hasPrefix = false;
+  if (prefixes && prefixes.length > 0) {
+    for (var i = 0; i < prefixes.length; i++) {
+      var p = String(prefixes[i] || "").trim();
+      if (!p) continue;
+      if (s.indexOf(p) === 0) { hasPrefix = true; break; }
+    }
+  } else {
+    hasPrefix = /^(멱살반|반멱살|스타일링대행)\b/.test(s);
+  }
+
+  var hasSuffix = suffix ? (s.indexOf(suffix) !== -1) : false;
+
+  if (requireSuffix && !hasSuffix) return false;
+  if (!hasPrefix && !hasSuffix) return false;
+
   return true;
 }
 
@@ -156,7 +171,12 @@ function isClosedBlock_(sheet, blockStartRow) {
   try {
     var v = sheet.getRange(blockStartRow, 7).getDisplayValue(); // G
     v = String(v || "").trim();
-    return (v === "완료" || v === "취소");
+    if (v === "완료" || v === "취소") return true;
+    if (typeof findStatusInBlock_ === "function") {
+      var status = findStatusInBlock_(sheet, blockStartRow);
+      return (status === "완료" || status === "취소");
+    }
+    return false;
   } catch (e) {
     return false;
   }
