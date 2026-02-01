@@ -85,26 +85,7 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
   ]);
 }
 
-function findContactsByPhone_(normalizedPhone) {
-  if (!normalizedPhone) return [];
-  if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
-    return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
-  }
-
-  var contacts = ContactsApp.getContacts();
-  var matches = [];
-  for (var i = 0; i < contacts.length; i++) {
-    var phones = contacts[i].getPhones();
-    for (var j = 0; j < phones.length; j++) {
-      var value = phones[j].getPhoneNumber();
-      if (normalizePhone_(value) === normalizedPhone) {
-        matches.push(contacts[i]);
-        break;
-      }
-    }
-  }
-  return matches;
-}
+function findContactsByPhone_(normalizedPhone) { ... }
 
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
@@ -272,7 +253,8 @@ function auditContactLog_(isSilent) {
     var normalized = normalizePhone_(phone);
     checked++;
 
-    var found = findContactsByPhone_(normalized);
+var found = findContactsByPhone_(normalized);
+
     if (found && found.length > 0) {
       present++;
       continue;
