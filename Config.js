@@ -44,6 +44,10 @@ const CONFIG = {
 
   /** 연락처 생성 옵션 */
   CONTACT_SKIP_IF_NO_PHONE: true,
+  /** 연락처_log에 존재하면 스킵 (false면 재동기화 시도) */
+  CONTACT_SKIP_IF_LOGGED: true,
+  /** 스킵 사유를 연락처_log에 남길지 여부 */
+  CONTACT_LOG_SKIP_REASONS: true,
   /** 프로젝트명 유효성 검사 무시하고 연락처 동기화 */
   CONTACT_IGNORE_NAME_VALIDATION: false,
 
