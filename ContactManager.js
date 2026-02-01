@@ -85,11 +85,13 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
   ]);
 }
 
+function findContactsByPhone_(normalizedPhone) { ... }
+
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
 
   var normalized = normalizePhone_(phone);
-  var found = ContactsApp.getContactsByPhoneNumber(normalized);
+  var found = findContactsByPhone_(normalized);
   if (found && found.length > 0) return { ok: true, existed: true };
 
   var notes = "";
@@ -251,7 +253,8 @@ function auditContactLog_(isSilent) {
     var normalized = normalizePhone_(phone);
     checked++;
 
-    var found = ContactsApp.getContactsByPhoneNumber(normalized);
+var found = findContactsByPhone_(normalized);
+
     if (found && found.length > 0) {
       present++;
       continue;
