@@ -85,10 +85,33 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
   ]);
 }
 
-function findContactsByPhone_(normalizedPhone) { ... }
+function findContactsByPhone_(normalizedPhone) {
+  if (!normalizedPhone) return [];
+  if (typeof ContactsApp === "undefined") return [];
+  if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
+    return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
+  }
+
+  var contacts = ContactsApp.getContacts();
+  var matches = [];
+  for (var i = 0; i < contacts.length; i++) {
+    var phones = contacts[i].getPhones();
+    for (var j = 0; j < phones.length; j++) {
+      var value = phones[j].getPhoneNumber();
+      if (normalizePhone_(value) === normalizedPhone) {
+        matches.push(contacts[i]);
+        break;
+      }
+    }
+  }
+  return matches;
+}
 
 function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!phone) return { ok: false, skipped: true, reason: "no_phone" };
+  if (typeof ContactsApp === "undefined") {
+    return { ok: false, skipped: true, reason: "contacts_unavailable" };
+  }
 
   var normalized = normalizePhone_(phone);
   var found = findContactsByPhone_(normalized);
@@ -174,7 +197,13 @@ function syncContactsBatch(isSilent) {
 
     try {
       var res = ensureContact_(info.nameVal, normalized, info.addressLine, info.mapUrl);
-      if (res.skipped) { skipped++; continue; }
+      if (res.skipped) {
+        if (CONFIG.CONTACT_LOG_SKIP_REASONS && res.reason) {
+          queueContactLogAppend_(pendingAppends, info, "skip: " + res.reason, r, "");
+        }
+        skipped++;
+        continue;
+      }
 
       if (res.existed) existed++; else created++;
 
@@ -230,6 +259,10 @@ function syncContactsBatch(isSilent) {
  */
 function auditContactLog_(isSilent) {
   var logSheet = getContactLogSheet_();
+  if (typeof ContactsApp === "undefined") {
+    if (!isSilent) SpreadsheetApp.getUi().alert("⚠️ ContactsApp을 사용할 수 없어 점검을 건너뜁니다.");
+    return { summary: "ContactsApp unavailable" };
+  }
   var lastRow = logSheet.getLastRow();
   if (lastRow < 2) {
     if (!isSilent) SpreadsheetApp.getUi().alert("ℹ️ 연락처_log 데이터가 없습니다.");
@@ -253,8 +286,7 @@ function auditContactLog_(isSilent) {
     var normalized = normalizePhone_(phone);
     checked++;
 
-var found = findContactsByPhone_(normalized);
-
+    var found = findContactsByPhone_(normalized);
     if (found && found.length > 0) {
       present++;
       continue;
