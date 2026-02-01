@@ -44,20 +44,12 @@ const CONFIG = {
 
   /** 연락처 생성 옵션 */
   CONTACT_SKIP_IF_NO_PHONE: true,
+  /** 연락처_log에 존재하면 스킵 (false면 재동기화 시도) */
+  CONTACT_SKIP_IF_LOGGED: true,
+  /** 스킵 사유를 연락처_log에 남길지 여부 */
+  CONTACT_LOG_SKIP_REASONS: true,
   /** 프로젝트명 유효성 검사 무시하고 연락처 동기화 */
   CONTACT_IGNORE_NAME_VALIDATION: false,
-
-  /** ✅ 프로젝트명 판정 옵션 */
-  NAME_VALIDATION: {
-    /** 접두어 목록(비어 있으면 접두어 강제하지 않음) */
-    prefixes: [],
-    /** "님"과 같은 접미어 강제 여부 */
-    requireSuffix: false,
-    /** 접미어 기본값 */
-    suffix: "님",
-    /** 접두어/접미어 무시하고 항상 유효로 처리 */
-    allowAny: false
-  },
 
   /** ✅ 프로젝트명 판정 옵션 */
   NAME_VALIDATION: {
