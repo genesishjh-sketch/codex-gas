@@ -36,6 +36,14 @@ function createFoldersBatch(isSilent, force) {
       if (isClosedBlock_(sheet, r)) { skipCount++; continue; }
 
       var projectFolder = getOrCreateProjectFolder_(parentFolder, sheet, r);
+      var projectUrlCell = sheet.getRange(r, urlCol);
+      var projectUrl = (projectUrlCell.getDisplayValue() || "").toString().trim();
+      if (!projectUrl) {
+        projectUrl = getUrlFromCell_(projectUrlCell);
+      }
+      if (force || !projectUrl || projectUrl.indexOf("drive.google.com") < 0) {
+        projectUrlCell.setValue(projectFolder.getUrl());
+      }
 
       // rows: r+1..r+4 (R5-8, R13-16, ...)
       for (var i = 1; i <= 4; i++) {
@@ -80,7 +88,7 @@ function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
 
   var nameVal = (nameCell.getDisplayValue() || "").toString().trim();
 
-  var dateCell = sheet.getRange(blockStartRow + 4, 4);
+  var dateCell = sheet.getRange(blockStartRow + 5, 4);
   var dateVal = dateCell.getValue();
   var dateStr = formatProjectDate_(dateVal, dateCell);
 
