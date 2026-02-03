@@ -17,6 +17,8 @@ function createFoldersBatch(isSilent, force) {
 
   var stopCtl = makeStopController_();
   var parentFolder = DriveApp.getFileById(ss.getId()).getParents().next();
+  var templateUrl = getTemplateUrl_(sheet);
+  var templateId = templateUrl ? extractIdFromUrl(templateUrl) : "";
 
   var processedCount = 0;
   var skipCount = 0;
@@ -43,6 +45,24 @@ function createFoldersBatch(isSilent, force) {
       }
       if (force || !projectUrl || projectUrl.indexOf("drive.google.com") < 0) {
         projectUrlCell.setValue(projectFolder.getUrl());
+      }
+
+      var fileCell = sheet.getRange(r + CONFIG.POS_FILE.row, CONFIG.POS_FILE.col);
+      var fileUrl = (fileCell.getDisplayValue() || "").toString().trim();
+      if (!fileUrl) {
+        fileUrl = getUrlFromCell_(fileCell);
+      }
+      var fileName = buildProjectFileName_(sheet, r);
+      if (force || !fileUrl) {
+        var file = findFileByName_(projectFolder, fileName);
+        if (!file) {
+          if (!templateId) throw new Error("물품리스트 템플릿 URL을 찾을 수 없습니다.");
+          file = copyTemplateFile_(templateId, fileName, projectFolder);
+          setImportRangeFormula_(file.getId(), r, blockHeight);
+        } else if (force) {
+          setImportRangeFormula_(file.getId(), r, blockHeight);
+        }
+        fileCell.setValue(file.getUrl());
       }
 
       // rows: r+1..r+4 (R5-8, R13-16, ...)
@@ -111,4 +131,34 @@ function formatProjectDate_(value, cell) {
   if (digits.length === 8) return digits.slice(2);
   if (digits.length === 6) return digits;
   return display;
+}
+
+function getTemplateUrl_(sheet) {
+  var templateCell = sheet.getRange((CONFIG && CONFIG.CELL_TEMPLATE_ORIGIN) || "G1");
+  return getUrlFromCell_(templateCell) || templateCell.getDisplayValue();
+}
+
+function buildProjectFileName_(sheet, blockStartRow) {
+  var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, CONFIG.POS_NAME.col);
+  var nameVal = (nameCell.getDisplayValue() || "").toString().trim();
+  return (nameVal ? nameVal + " " : "") + "물품리스트";
+}
+
+function findFileByName_(folder, fileName) {
+  var files = folder.getFilesByName(fileName);
+  return files.hasNext() ? files.next() : null;
+}
+
+function copyTemplateFile_(templateId, fileName, parentFolder) {
+  var templateFile = DriveApp.getFileById(templateId);
+  return templateFile.makeCopy(fileName, parentFolder);
+}
+
+function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight) {
+  var endRow = blockStartRow + Math.max(1, blockHeight - 2);
+  var rangeText = "B" + blockStartRow + ":K" + endRow;
+  var formula = '=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1GgdT1H-IEWWJDpuD14IURuZZWL9y_1smM9eUSXQMPoo/edit", "통합관리시트!' + rangeText + '")';
+  var fileSs = SpreadsheetApp.openById(spreadsheetId);
+  var targetSheet = fileSs.getSheets()[0];
+  targetSheet.getRange("B3").setFormula(formula);
 }
