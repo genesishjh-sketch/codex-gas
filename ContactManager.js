@@ -101,6 +101,13 @@ function isPeopleScopeError_(error) {
   return msg.indexOf("insufficient authentication scopes") >= 0;
 }
 
+function isPeopleApiDisabledError_(error) {
+  var msg = String(error && (error.message || error) || "");
+  return msg.indexOf("API has not been used") >= 0 ||
+    msg.indexOf("is not enabled") >= 0 ||
+    msg.indexOf("has not been used in project") >= 0;
+}
+
 function getPeopleServiceState_() {
   if (typeof People === "undefined" || !People.People) {
     return { ok: false, reason: "people_unavailable" };
@@ -111,6 +118,9 @@ function getPeopleServiceState_() {
   } catch (e) {
     if (isPeopleScopeError_(e)) {
       return { ok: false, reason: "people_scope" };
+    }
+    if (isPeopleApiDisabledError_(e)) {
+      return { ok: false, reason: "people_disabled" };
     }
     return { ok: false, reason: "people_error" };
   }
@@ -148,6 +158,9 @@ function getContactsUnavailableMessage_(reason, actionLabel) {
   }
   if (reason === "people_scope") {
     return "⚠️ People API 권한이 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 및 스코프를 확인하세요.";
+  }
+  if (reason === "people_disabled") {
+    return "⚠️ People API가 프로젝트에서 비활성화되어 " + label + "을(를) 건너뜁니다. 고급 서비스/Google Cloud 콘솔에서 People API를 활성화하세요.";
   }
   if (reason === "people_unavailable" || reason === "people_error") {
     return "⚠️ People API를 사용할 수 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
