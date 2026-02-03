@@ -65,65 +65,68 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
       }
     }
 
-    // 폴더 URL 셀 찾기: 블록 내 R(폴더명) 행의 S 링크 우선, 없으면 S열에서 첫 drive URL
-    var folderCellInfo = findFolderUrlCell_(sheet, r);
-    if (!folderCellInfo) {
+    // 폴더 URL 셀 찾기: 블록 내 S열 링크 전체 수집
+    var folderCellInfos = findFolderUrlCells_(sheet, r);
+    if (!folderCellInfos || folderCellInfos.length === 0) {
       skipped++;
       logRows.push([runId, new Date(), r, status || "", "", "SKIP_NO_URL", "R/S에서 링크를 찾지 못함"]);
       continue;
     }
 
-    var urlCell = folderCellInfo.cell;    // 색칠 대상(=S)
-    var folderUrl = folderCellInfo.url;
+    for (var f = 0; f < folderCellInfos.length; f++) {
+      var folderCellInfo = folderCellInfos[f];
+      var urlCell = folderCellInfo.cell;    // 색칠 대상(=S)
+      var folderUrl = folderCellInfo.url;
 
-    // 에러 시 “기존색 유지” 위해 현재 배경 확보
-    var prevBg = urlCell.getBackground();
+      // 에러 시 “기존색 유지” 위해 현재 배경 확보
+      var prevBg = urlCell.getBackground();
 
-    // URL 없으면 흰색 처리
-    if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
-      urlCell.setBackground("#ffffff");
-      logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_BAD_URL", "drive URL 아님"]);
-      continue;
-    }
-
-    var folderId = extractIdFromUrl(folderUrl);
-    if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
-      urlCell.setBackground("#ffffff");
-      logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_NO_ID", "폴더 ID 추출 실패"]);
-      continue;
-    }
-
-    try {
-      var cached = cacheMap[folderId];
-      var hasFiles;
-      var source = "SCAN";
-
-      // 전체스캔(forceRefresh)면 캐시 무시
-      if (!forceRefresh && cached && isCacheFresh_(cached.at)) {
-        hasFiles = !!cached.has;
-        source = "CACHE";
-      } else {
-        // 메인+서브폴더까지 확인 (depth=2)
-        hasFiles = folderHasAnyFilesDeep_(folderId, 2);
-
-        // 캐시 기록
-        if (cached) {
-          logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
-        } else {
-          logSh.appendRow([folderId, hasFiles, new Date()]);
-        }
+      // URL 없으면 흰색 처리
+      if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
+        urlCell.setBackground("#ffffff");
+        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_BAD_URL", "drive URL 아님"]);
+        continue;
       }
 
-      logRows.push([runId, new Date(), r, status || "", folderUrl, "UPDATED", (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
-      urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
-      updated++;
+      var folderId = extractIdFromUrl(folderUrl);
+      if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
+        urlCell.setBackground("#ffffff");
+        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_NO_ID", "폴더 ID 추출 실패"]);
+        continue;
+      }
 
-    } catch (e) {
-      // 권한/쿼터/일시 오류 → 기존색 유지
-      urlCell.setBackground(prevBg);
-      errors++;
-      logRows.push([runId, new Date(), r, status || "", folderUrl || "", "ERROR", String(e && e.message ? e.message : e)]);
-      continue;
+      try {
+        var cached = cacheMap[folderId];
+        var hasFiles;
+        var source = "SCAN";
+
+        // 전체스캔(forceRefresh)면 캐시 무시
+        if (!forceRefresh && cached && isCacheFresh_(cached.at)) {
+          hasFiles = !!cached.has;
+          source = "CACHE";
+        } else {
+          // 메인+서브폴더까지 확인 (depth=2)
+          hasFiles = folderHasAnyFilesDeep_(folderId, 2);
+
+          // 캐시 기록
+          if (cached) {
+            logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
+          } else {
+            logSh.appendRow([folderId, hasFiles, new Date()]);
+          }
+        }
+
+        logRows.push([runId, new Date(), r, status || "", folderUrl, "UPDATED", (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
+        urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
+        updated++;
+
+      } catch (e) {
+        // 권한/쿼터/일시 오류 → 기존색 유지
+        urlCell.setBackground(prevBg);
+        errors++;
+        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "ERROR", String(e && e.message ? e.message : e)]);
+        continue;
+      }
     }
   }
 
@@ -215,7 +218,7 @@ function folderHasActualFiles_(folder) {
  * 없으면 S열에서 첫 번째 drive URL을 찾아 반환.
  * (색칠은 항상 S(URL) 셀만)
  */
-function findFolderUrlCell_(sheet, blockStartRow) {
+function findFolderUrlCells_(sheet, blockStartRow) {
   var lastRow = sheet.getLastRow();
   var blockHeight = getBlockHeight_(sheet);
   var endRow = Math.min(lastRow, blockStartRow + blockHeight - 1);
@@ -225,6 +228,7 @@ function findFolderUrlCell_(sheet, blockStartRow) {
   var urlCol = (CONFIG && (CONFIG.POS_FOLDER_URL_COL || CONFIG.DRIVE_MARK_COL)) || 19; // S
   var scanRows = endRow - blockStartRow + 1;
 
+  var results = [];
   if (labelCol && urlCol && scanRows > 0) {
     var labelRange = sheet.getRange(blockStartRow, labelCol, scanRows, 1);
     var urlRange = sheet.getRange(blockStartRow, urlCol, scanRows, 1);
@@ -241,12 +245,12 @@ function findFolderUrlCell_(sheet, blockStartRow) {
         url = getUrlFromCell_(urlCell);
       }
       if (url && url.indexOf("drive.google.com") >= 0) {
-        return { cell: urlCell, url: url, col: urlCol };
+        results.push({ cell: urlCell, url: url, col: urlCol });
       }
     }
   }
 
-  // If no labeled row matched, scan S column in the block for any drive URL.
+  // Scan S column in the block for any drive URL.
   if (urlCol && scanRows > 0) {
     var urlRange2 = sheet.getRange(blockStartRow, urlCol, scanRows, 1);
     var urlVals2 = urlRange2.getDisplayValues();
@@ -257,7 +261,7 @@ function findFolderUrlCell_(sheet, blockStartRow) {
         url2 = getUrlFromCell_(cell2);
       }
       if (url2 && url2.indexOf("drive.google.com") >= 0) {
-        return { cell: cell2, url: url2, col: urlCol };
+        results.push({ cell: cell2, url: url2, col: urlCol });
       }
     }
   }
@@ -275,7 +279,7 @@ function findFolderUrlCell_(sheet, blockStartRow) {
         var rich = cell3.getRichTextValue();
         if (rich && rich.getLinkUrl()) url3 = rich.getLinkUrl();
       }
-      return { cell: cell3, url: url3, col: urlCol2 };
+      results.push({ cell: cell3, url: url3, col: urlCol2 });
     }
   }
 
@@ -284,10 +288,24 @@ function findFolderUrlCell_(sheet, blockStartRow) {
     var s = (rowVals[k] || "").toString();
     if (s.indexOf("drive.google.com") >= 0) {
       var cell4 = sheet.getRange(blockStartRow, k + 1);
-      return { cell: cell4, url: s.trim(), col: k + 1 };
+      results.push({ cell: cell4, url: s.trim(), col: k + 1 });
     }
   }
-  return null;
+  if (!results.length) return [];
+  return dedupeFolderUrlCells_(results);
+}
+
+function dedupeFolderUrlCells_(items) {
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < items.length; i++) {
+    var cell = items[i].cell;
+    var key = cell.getRow() + ":" + cell.getColumn();
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(items[i]);
+  }
+  return out;
 }
 
 function findStatusInRow_(sheet, blockStartRow) {

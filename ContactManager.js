@@ -24,10 +24,14 @@ function loadContactLogMap_(logSheet) {
   var last = logSheet.getLastRow();
   if (last < 2) return map;
 
-  var phones = logSheet.getRange(2, 1, last - 1, 1).getValues();
-  for (var i = 0; i < phones.length; i++) {
-    var p = (phones[i][0] || "").toString().trim();
-    if (p) map[p] = i + 2;
+  var rows = logSheet.getRange(2, 1, last - 1, 6).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    var p = (rows[i][0] || "").toString().trim();
+    if (!p) continue;
+    map[p] = {
+      row: i + 2,
+      result: (rows[i][5] || "").toString().trim()
+    };
   }
   return map;
 }
@@ -231,8 +235,12 @@ function syncContactsBatch(isSilent) {
     var normalized = info.normalized;
 
     // ✅ 로그에 있으면 스킵
-    var logRowNum = normalized ? logMap[normalized] : null;
-    if (logRowNum && CONFIG.CONTACT_SKIP_IF_LOGGED !== false) {
+    var logEntry = normalized ? logMap[normalized] : null;
+    var logRowNum = logEntry ? logEntry.row : null;
+    var logResult = logEntry ? logEntry.result : "";
+    var shouldSkipByLog = !!(logRowNum && CONFIG.CONTACT_SKIP_IF_LOGGED !== false &&
+      (logResult === "ok" || logResult === "cached_skip"));
+    if (shouldSkipByLog) {
       cached++;
       pendingUpdates.push({
         row: logRowNum,
