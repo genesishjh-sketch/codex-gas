@@ -96,19 +96,55 @@ function isContactsDeprecatedError_(error) {
   return msg.indexOf("Contacts API has been deprecated") >= 0;
 }
 
+function isPeopleScopeError_(error) {
+  var msg = String(error && (error.message || error) || "");
+  return msg.indexOf("insufficient authentication scopes") >= 0;
+}
+
+function isPeopleApiDisabledError_(error) {
+  var msg = String(error && (error.message || error) || "");
+  return msg.indexOf("API has not been used") >= 0 ||
+    msg.indexOf("is not enabled") >= 0 ||
+    msg.indexOf("has not been used in project") >= 0;
+}
+
+function getPeopleServiceState_() {
+  if (typeof People === "undefined" || !People.People) {
+    return { ok: false, reason: "people_unavailable" };
+  }
+  try {
+    People.People.get("people/me", { personFields: "names" });
+    return { ok: true };
+  } catch (e) {
+    if (isPeopleScopeError_(e)) {
+      return { ok: false, reason: "people_scope" };
+    }
+    if (isPeopleApiDisabledError_(e)) {
+      return { ok: false, reason: "people_disabled" };
+    }
+    return { ok: false, reason: "people_error" };
+  }
+}
+
 function getContactsServiceState_() {
   if (CONTACTS_SERVICE_STATE_) return CONTACTS_SERVICE_STATE_;
+  var peopleState = getPeopleServiceState_();
+  if (peopleState.ok) {
+    CONTACTS_SERVICE_STATE_ = { ok: true, provider: "people" };
+    return CONTACTS_SERVICE_STATE_;
+  }
+
   if (typeof ContactsApp === "undefined") {
-    CONTACTS_SERVICE_STATE_ = { ok: false, reason: "contacts_unavailable" };
+    CONTACTS_SERVICE_STATE_ = { ok: false, reason: peopleState.reason || "contacts_unavailable" };
     return CONTACTS_SERVICE_STATE_;
   }
   try {
     ContactsApp.getContacts();
-    CONTACTS_SERVICE_STATE_ = { ok: true };
+    CONTACTS_SERVICE_STATE_ = { ok: true, provider: "contacts" };
     return CONTACTS_SERVICE_STATE_;
   } catch (e) {
     if (isContactsDeprecatedError_(e)) {
-      CONTACTS_SERVICE_STATE_ = { ok: false, reason: "contacts_deprecated" };
+      CONTACTS_SERVICE_STATE_ = { ok: false, reason: peopleState.reason || "contacts_deprecated" };
       return CONTACTS_SERVICE_STATE_;
     }
     throw e;
@@ -118,15 +154,43 @@ function getContactsServiceState_() {
 function getContactsUnavailableMessage_(reason, actionLabel) {
   var label = actionLabel || "연락처 작업";
   if (reason === "contacts_deprecated") {
+    var peopleState = getPeopleServiceState_();
+    if (!peopleState.ok && peopleState.reason) {
+      reason = peopleState.reason;
+    }
+  }
+  if (reason === "contacts_deprecated") {
     return "⚠️ Contacts API가 종료되어 " + label + "을(를) 건너뜁니다. People API로 이전이 필요합니다.";
   }
+  if (reason === "people_scope") {
+    return "⚠️ People API 권한이 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 및 스코프를 확인하세요.";
+  }
+  if (reason === "people_disabled") {
+    return "⚠️ People API가 프로젝트에서 비활성화되어 " + label + "을(를) 건너뜁니다. 고급 서비스/Google Cloud 콘솔에서 People API를 활성화하세요.";
+  }
+  if (reason === "people_unavailable" || reason === "people_error") {
+    return "⚠️ People API를 사용할 수 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
+  }
   return "⚠️ ContactsApp을 사용할 수 없어 " + label + "을(를) 건너뜁니다.";
+}
+
+function findPeopleContactsByPhone_(normalizedPhone) {
+  if (!normalizedPhone) return [];
+  var response = People.People.searchContacts({
+    query: normalizedPhone,
+    readMask: "names,phoneNumbers"
+  });
+  var results = (response && response.results) ? response.results : [];
+  return results.map(function (item) { return item.person; }).filter(Boolean);
 }
 
 function findContactsByPhone_(normalizedPhone) {
   if (!normalizedPhone) return [];
   var state = getContactsServiceState_();
   if (!state.ok) return [];
+  if (state.provider === "people") {
+    return findPeopleContactsByPhone_(normalizedPhone);
+  }
   if (ContactsApp && typeof ContactsApp.getContactsByPhoneNumber === "function") {
     return ContactsApp.getContactsByPhoneNumber(normalizedPhone) || [];
   }
@@ -160,6 +224,21 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (mapUrl) notes += (notes ? "\n" : "") + "지도: " + mapUrl;
 
   try {
+    if (state.provider === "people") {
+      var person = {
+        names: [{ displayName: displayName || normalized }],
+        phoneNumbers: [{ value: normalized, type: "mobile" }]
+      };
+      if (notes) {
+        person.biographies = [{ value: notes, contentType: "TEXT_PLAIN" }];
+      }
+      if (addressLine) {
+        person.addresses = [{ value: addressLine }];
+      }
+      People.People.createContact(person);
+      return { ok: true, existed: false };
+    }
+
     var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
     c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
 
@@ -240,7 +319,15 @@ function syncContactsBatch(isSilent) {
     var logResult = logEntry ? logEntry.result : "";
     var shouldSkipByLog = !!(logRowNum && CONFIG.CONTACT_SKIP_IF_LOGGED !== false &&
       (logResult === "ok" || logResult === "cached_skip"));
-    if (shouldSkipByLog) {
+    var shouldVerifyLogged = CONFIG.CONTACT_VERIFY_LOGGED !== false;
+    var canSkip = shouldSkipByLog;
+    if (shouldSkipByLog && shouldVerifyLogged && normalized) {
+      var existing = findContactsByPhone_(normalized);
+      if (!existing || existing.length === 0) {
+        canSkip = false;
+      }
+    }
+    if (canSkip) {
       cached++;
       pendingUpdates.push({
         row: logRowNum,
