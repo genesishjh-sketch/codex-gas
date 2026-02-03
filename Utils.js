@@ -33,7 +33,7 @@ function isValidName(nameVal) {
       if (s.indexOf(p) === 0) { hasPrefix = true; break; }
     }
   } else {
-    hasPrefix = /^(멱살반|반멱살|스타일링대행)\b/.test(s);
+    hasPrefix = /^(멱살반|반멱살|스타일링대행|단기)/.test(s);
   }
 
   var hasSuffix = suffix ? (s.indexOf(suffix) !== -1) : false;
