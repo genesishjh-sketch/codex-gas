@@ -85,8 +85,7 @@ function createFoldersBatch(isSilent, force) {
           continue;
         }
 
-        var folders = projectFolder.getFoldersByName(label);
-        var folder = folders.hasNext() ? folders.next() : projectFolder.createFolder(label);
+        var folder = getOrCreateSubFolder_(projectFolder, label);
         urlCell.setValue(folder.getUrl());
         processedCount++;
         successList.push(label);
@@ -161,4 +160,9 @@ function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight) {
   var fileSs = SpreadsheetApp.openById(spreadsheetId);
   var targetSheet = fileSs.getSheets()[0];
   targetSheet.getRange("B3").setFormula(formula);
+}
+
+function getOrCreateSubFolder_(projectFolder, label) {
+  var folders = projectFolder.getFoldersByName(label);
+  return folders.hasNext() ? folders.next() : projectFolder.createFolder(label);
 }
