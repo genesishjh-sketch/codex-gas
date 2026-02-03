@@ -154,6 +154,12 @@ function getContactsServiceState_() {
 function getContactsUnavailableMessage_(reason, actionLabel) {
   var label = actionLabel || "연락처 작업";
   if (reason === "contacts_deprecated") {
+    var peopleState = getPeopleServiceState_();
+    if (!peopleState.ok && peopleState.reason) {
+      reason = peopleState.reason;
+    }
+  }
+  if (reason === "contacts_deprecated") {
     return "⚠️ Contacts API가 종료되어 " + label + "을(를) 건너뜁니다. People API로 이전이 필요합니다.";
   }
   if (reason === "people_scope") {
