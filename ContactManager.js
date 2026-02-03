@@ -171,6 +171,7 @@ function getContactsUnavailableMessage_(reason, actionLabel) {
   if (reason === "people_unavailable" || reason === "people_error") {
     return "⚠️ People API를 사용할 수 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
   }
+in
   return "⚠️ ContactsApp을 사용할 수 없어 " + label + "을(를) 건너뜁니다.";
 }
 
