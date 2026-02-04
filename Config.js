@@ -81,5 +81,13 @@ const CONFIG = {
   /** ✅ 드라이브 체크(캐시/표시) */
   DRIVE_LOG_SHEET: "드라이브_check_log",
   DRIVE_CACHE_HOURS: 6,
-  DRIVE_MARK_COL: 19 // S열(표시용 색칠)
+  DRIVE_MARK_COL: 19, // S열(표시용 색칠)
+
+  /** ✅ 잔금일 기준 번호 정렬 옵션 */
+  BALANCE_DATE: {
+    labelCol: 7,  // G: 라벨
+    planCol: 8,   // H: 예정일
+    doneCol: 9,   // I: 완료일(예정 없으면 대체)
+    keywords: ["잔금", "잔금일"]
+  }
 };

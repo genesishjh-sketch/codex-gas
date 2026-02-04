@@ -81,6 +81,45 @@ function getStartRow_() {
   return (CONFIG && CONFIG.START_ROW) ? CONFIG.START_ROW : 4;
 }
 
+/** =========================
+ *  잔금일 추출
+ *  - 라벨(G) + 예정(H)/완료(I)에서 키워드 매칭
+ *  ========================= */
+function extractBalanceDate_(sheet, blockStartRow, blockHeight) {
+  var cfg = (CONFIG && CONFIG.BALANCE_DATE) ? CONFIG.BALANCE_DATE : null;
+  if (!cfg) return null;
+
+  var labelCol = cfg.labelCol || 7;
+  var planCol = cfg.planCol || 8;
+  var doneCol = cfg.doneCol || 9;
+  var keywords = cfg.keywords || ["잔금", "잔금일"];
+
+  var labels = sheet.getRange(blockStartRow, labelCol, blockHeight, 1).getDisplayValues();
+  var plans = sheet.getRange(blockStartRow, planCol, blockHeight, 1).getValues();
+  var dones = sheet.getRange(blockStartRow, doneCol, blockHeight, 1).getValues();
+
+  function match_(label) {
+    if (!label) return false;
+    var t = label.toString().replace(/\s+/g, "").toLowerCase();
+    return keywords.some(function(k) {
+      return t.indexOf(String(k).replace(/\s+/g, "").toLowerCase()) !== -1;
+    });
+  }
+
+  for (var i = 0; i < blockHeight; i++) {
+    var lab = (labels[i][0] || "").toString().trim();
+    if (!match_(lab)) continue;
+
+    var plan = plans[i][0];
+    var done = dones[i][0];
+    if (plan instanceof Date) return new Date(plan.getTime());
+    if (done instanceof Date) return new Date(done.getTime());
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * 시트 없으면 만들고, 헤더 없으면 1행에 헤더 세팅
  * @param {string} sheetName
