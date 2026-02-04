@@ -15,6 +15,8 @@ function onOpen() {
     .addSeparator()
     .addItem('📅 금주 일정표 만들기', 'generateWeeklyCalendar')
     .addSeparator()
+    .addItem('🔢 잔금일 기준 번호 재정렬', 'renumberByBalanceDate')
+    .addSeparator()
     .addItem('👤 연락처 동기화', 'runContactSync')
     .addItem('🔍 연락처 로그 점검', 'runContactAudit')
     .addSeparator()
@@ -184,4 +186,66 @@ function runDiagnostics() {
   msg.push("- 카카오키 상태: " + (keyOk ? "OK" : "⚠️ 확인 필요"));
 
   ui.alert(msg.join("\n"));
+}
+
+/** 잔금일(예정/완료) 날짜순으로 B열 번호 재정렬 */
+function renumberByBalanceDate() {
+  var ui = SpreadsheetApp.getUi();
+  var sheet;
+  try {
+    sheet = getMainSheet_();
+  } catch (e) {
+    ui.alert("❌ 시트 오류\n" + (e && e.message ? e.message : e));
+    return;
+  }
+
+  var blockHeight = getBlockHeight_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.START_ROW) {
+    ui.alert("ℹ️ 데이터가 없습니다.");
+    return;
+  }
+
+  var stopCtl = makeStopController_();
+  var blocks = [];
+
+  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+    if (stopCtl.check(sheet, r)) break;
+
+    var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
+    if (!isValidName(nameVal)) continue;
+
+    var balanceDate = extractBalanceDate_(sheet, r, blockHeight);
+    blocks.push({
+      row: r,
+      name: nameVal,
+      date: balanceDate,
+      dateKey: balanceDate ? balanceDate.getTime() : null
+    });
+  }
+
+  if (blocks.length === 0) {
+    ui.alert("ℹ️ 정렬할 프로젝트가 없습니다.");
+    return;
+  }
+
+  blocks.sort(function(a, b) {
+    var aHas = a.dateKey !== null;
+    var bHas = b.dateKey !== null;
+    if (aHas && bHas) return a.dateKey - b.dateKey;
+    if (aHas) return -1;
+    if (bHas) return 1;
+    return a.row - b.row;
+  });
+
+  var writes = [];
+  for (var i = 0; i < blocks.length; i++) {
+    writes.push([i + 1]);
+  }
+  var targetRows = blocks.map(function(b) { return b.row; });
+  for (var j = 0; j < targetRows.length; j++) {
+    sheet.getRange(targetRows[j], CONFIG.POS_NO.col).setValue(writes[j][0]);
+  }
+
+  ui.alert("✅ 잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건");
 }
