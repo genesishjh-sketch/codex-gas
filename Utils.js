@@ -84,17 +84,52 @@ function getStartRow_() {
 /** =========================
  *  잔금일 추출
  *  - D9(블록 기준) 셀에서 날짜 추출
+ *  - 구버전(BALANCE_DATE) 설정이 있으면 라벨/예정/완료에서 키워드 매칭
  *  ========================= */
-function extractBalanceDate_(sheet, blockStartRow) {
+function extractBalanceDate_(sheet, blockStartRow, blockHeight) {
   var cfg = (CONFIG && CONFIG.BALANCE_DATE_CELL) ? CONFIG.BALANCE_DATE_CELL : null;
-  var rowOffset = cfg && typeof cfg.row === "number" ? cfg.row : 5;
-  var col = cfg && typeof cfg.col === "number" ? cfg.col : 4;
-  var cell = sheet.getRange(blockStartRow + rowOffset, col).getValue();
-  if (cell instanceof Date) return new Date(cell.getTime());
-  if (typeof cell === "string" && cell.trim() !== "") {
-    var parsed = new Date(cell);
-    if (!isNaN(parsed.getTime())) return parsed;
+  if (cfg) {
+    var rowOffset = cfg && typeof cfg.row === "number" ? cfg.row : 5;
+    var col = cfg && typeof cfg.col === "number" ? cfg.col : 4;
+    var cell = sheet.getRange(blockStartRow + rowOffset, col).getValue();
+    if (cell instanceof Date) return new Date(cell.getTime());
+    if (typeof cell === "string" && cell.trim() !== "") {
+      var parsed = new Date(cell);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
   }
+
+  var legacy = (CONFIG && CONFIG.BALANCE_DATE) ? CONFIG.BALANCE_DATE : null;
+  if (!legacy || !blockHeight) return null;
+
+  var labelCol = legacy.labelCol || 7;
+  var planCol = legacy.planCol || 8;
+  var doneCol = legacy.doneCol || 9;
+  var keywords = legacy.keywords || ["잔금", "잔금일"];
+
+  var labels = sheet.getRange(blockStartRow, labelCol, blockHeight, 1).getDisplayValues();
+  var plans = sheet.getRange(blockStartRow, planCol, blockHeight, 1).getValues();
+  var dones = sheet.getRange(blockStartRow, doneCol, blockHeight, 1).getValues();
+
+  function match_(label) {
+    if (!label) return false;
+    var t = label.toString().replace(/\s+/g, "").toLowerCase();
+    return keywords.some(function(k) {
+      return t.indexOf(String(k).replace(/\s+/g, "").toLowerCase()) !== -1;
+    });
+  }
+
+  for (var i = 0; i < blockHeight; i++) {
+    var lab = (labels[i][0] || "").toString().trim();
+    if (!match_(lab)) continue;
+
+    var plan = plans[i][0];
+    var done = dones[i][0];
+    if (plan instanceof Date) return new Date(plan.getTime());
+    if (done instanceof Date) return new Date(done.getTime());
+    return null;
+  }
+
   return null;
 }
 

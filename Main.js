@@ -215,7 +215,7 @@ function renumberByBalanceDate() {
     var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
     if (!isValidName(nameVal)) continue;
 
-    var balanceDate = extractBalanceDate_(sheet, r);
+    var balanceDate = extractBalanceDate_(sheet, r, blockHeight);
     var balanceStatus = getBalanceStatusValue_(sheet, r);
     blocks.push({
       row: r,
