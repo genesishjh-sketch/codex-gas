@@ -91,6 +91,10 @@ function extractBalanceDate_(sheet, blockStartRow) {
   var col = cfg && typeof cfg.col === "number" ? cfg.col : 4;
   var cell = sheet.getRange(blockStartRow + rowOffset, col).getValue();
   if (cell instanceof Date) return new Date(cell.getTime());
+  if (typeof cell === "string" && cell.trim() !== "") {
+    var parsed = new Date(cell);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
   return null;
 }
 
