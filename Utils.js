@@ -81,6 +81,29 @@ function getStartRow_() {
   return (CONFIG && CONFIG.START_ROW) ? CONFIG.START_ROW : 4;
 }
 
+/** =========================
+ *  잔금일 추출
+ *  - D9(블록 기준) 셀에서 날짜 추출
+ *  ========================= */
+function extractBalanceDate_(sheet, blockStartRow) {
+  var cfg = (CONFIG && CONFIG.BALANCE_DATE_CELL) ? CONFIG.BALANCE_DATE_CELL : null;
+  var rowOffset = cfg && typeof cfg.row === "number" ? cfg.row : 5;
+  var col = cfg && typeof cfg.col === "number" ? cfg.col : 4;
+  var cell = sheet.getRange(blockStartRow + rowOffset, col).getValue();
+  if (cell instanceof Date) return new Date(cell.getTime());
+  return null;
+}
+
+/** =========================
+ *  잔금 상태 셀(D5) 값 확인
+ *  ========================= */
+function getBalanceStatusValue_(sheet, blockStartRow) {
+  var cfg = (CONFIG && CONFIG.BALANCE_STATUS_CELL) ? CONFIG.BALANCE_STATUS_CELL : null;
+  var rowOffset = cfg && typeof cfg.row === "number" ? cfg.row : 1;
+  var col = cfg && typeof cfg.col === "number" ? cfg.col : 4;
+  return sheet.getRange(blockStartRow + rowOffset, col).getDisplayValue();
+}
+
 /**
  * 시트 없으면 만들고, 헤더 없으면 1행에 헤더 세팅
  * @param {string} sheetName

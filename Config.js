@@ -81,5 +81,15 @@ const CONFIG = {
   /** ✅ 드라이브 체크(캐시/표시) */
   DRIVE_LOG_SHEET: "드라이브_check_log",
   DRIVE_CACHE_HOURS: 6,
-  DRIVE_MARK_COL: 19 // S열(표시용 색칠)
+  DRIVE_MARK_COL: 19, // S열(표시용 색칠)
+
+  /** ✅ 잔금일 기준 번호 정렬 옵션 (D열 특정 셀 사용) */
+  BALANCE_DATE_CELL: {
+    row: 5, // 블록 시작행 기준 D9 -> startRow + 5
+    col: 4  // D열
+  },
+  BALANCE_STATUS_CELL: {
+    row: 1, // 블록 시작행 기준 D5 -> startRow + 1
+    col: 4  // D열
+  }
 };
