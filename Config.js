@@ -12,8 +12,6 @@ const CONFIG = {
   REPORT_SHEET_NAME: "업무보고",
   CALENDAR_SHEET_NAME: "홈스타일_주간일정",
 
-  /** ✅ DB 시트명: 비우면 자동 생성(권장) */
-  DB_SHEET_NAME: "",
 
   START_ROW: 4,
   BLOCK_HEIGHT: 9,
@@ -65,7 +63,7 @@ const CONFIG = {
     allowAny: false
   },
 
-  /** ✅ (카톡 보고서/DB) 홈스타일링 전용 컬럼: 라벨 G / 예정 H / 완료 I */
+  /** ✅ (카톡 보고서) 홈스타일링 전용 컬럼: 라벨 G / 예정 H / 완료 I */
   HOME_TASK: {
     labelCol: 7, // G
     planCol: 8,  // H (예정일)
