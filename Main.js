@@ -208,20 +208,37 @@ function renumberByBalanceDate() {
 
   var stopCtl = makeStopController_();
   var blocks = [];
+  var datedBlocks = [];
+
+  function isEmpty_(val) {
+    if (val === null || val === undefined) return true;
+    if (val instanceof Date) return false;
+    return String(val).trim() === "";
+  }
+  function toDateKey_(val) {
+    if (val instanceof Date) return val.getTime();
+    return null;
+  }
 
   for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
     if (stopCtl.check(sheet, r)) break;
 
-    var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
-    if (!isValidName(nameVal)) continue;
+    var d5 = sheet.getRange(r + 1, 4).getValue(); // D5
+    var d9 = sheet.getRange(r + 5, 4).getValue(); // D9
+    var dateKey = toDateKey_(d9);
+    var hasD5 = !isEmpty_(d5);
+    var hasD9 = !isEmpty_(d9);
 
-    var balanceDate = extractBalanceDate_(sheet, r, blockHeight);
-    blocks.push({
+    var entry = {
       row: r,
-      name: nameVal,
-      date: balanceDate,
-      dateKey: balanceDate ? balanceDate.getTime() : null
-    });
+      d5: d5,
+      d9: d9,
+      dateKey: dateKey,
+      hasD5: hasD5,
+      hasD9: hasD9
+    };
+    blocks.push(entry);
+    if (dateKey !== null) datedBlocks.push(entry);
   }
 
   if (blocks.length === 0) {
@@ -229,23 +246,27 @@ function renumberByBalanceDate() {
     return;
   }
 
-  blocks.sort(function(a, b) {
-    var aHas = a.dateKey !== null;
-    var bHas = b.dateKey !== null;
-    if (aHas && bHas) return a.dateKey - b.dateKey;
-    if (aHas) return -1;
-    if (bHas) return 1;
+  datedBlocks.sort(function(a, b) {
+    if (a.dateKey !== b.dateKey) return a.dateKey - b.dateKey;
     return a.row - b.row;
   });
 
-  var writes = [];
-  for (var i = 0; i < blocks.length; i++) {
-    writes.push([i + 1]);
-  }
-  var targetRows = blocks.map(function(b) { return b.row; });
-  for (var j = 0; j < targetRows.length; j++) {
-    sheet.getRange(targetRows[j], CONFIG.POS_NO.col).setValue(writes[j][0]);
+  var sequenceMap = {};
+  for (var i = 0; i < datedBlocks.length; i++) {
+    sequenceMap[datedBlocks[i].row] = String(i + 1).padStart(3, "0");
   }
 
-  ui.alert("✅ 잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건");
+  blocks.forEach(function(block) {
+    var value = "";
+    if (block.hasD9) {
+      value = sequenceMap[block.row] || "";
+    } else if (block.hasD5) {
+      value = "999";
+    } else {
+      value = "";
+    }
+    sheet.getRange(block.row, CONFIG.POS_NO.col).setValue(value);
+  });
+
+  ui.alert("✅ 잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건");
 }
