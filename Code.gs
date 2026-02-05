@@ -12,6 +12,10 @@ var INTERIOR_SYNC_CONFIG = {
   TARGET_CLIENTS: 'clients',
   TARGET_PROJECTS: 'projects',
   TARGET_MILESTONES: 'milestones',
+  SOURCE_SHEET_ALIASES: ['통합관리시트', '통합 관리시트'],
+  TARGET_CLIENTS_ALIASES: ['clients', 'Clients', '고객', '고객DB'],
+  TARGET_PROJECTS_ALIASES: ['projects', 'Projects', '프로젝트', '프로젝트DB'],
+  TARGET_MILESTONES_ALIASES: ['milestones', 'Milestones', '마일스톤', '일정'],
   SYNC_BUTTON_CELL: 'A1',
   SYNC_BUTTON_LABEL_CELL: 'B1'
 };
@@ -38,13 +42,28 @@ function runInteriorDbSync() {
   var ui = SpreadsheetApp.getUi();
 
   try {
-    var sourceSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.SOURCE_SHEET);
-    var clientsSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.TARGET_CLIENTS);
-    var projectsSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.TARGET_PROJECTS);
-    var milestonesSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.TARGET_MILESTONES);
+    var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
+    var clientsSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_CLIENTS_ALIASES);
+    var projectsSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_PROJECTS_ALIASES);
+    var milestonesSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_MILESTONES_ALIASES);
 
     if (!sourceSheet || !clientsSheet || !projectsSheet || !milestonesSheet) {
-      throw new Error('필수 시트(통합관리시트/clients/projects/milestones) 중 일부를 찾을 수 없습니다.');
+      var missing = [];
+      if (!sourceSheet) missing.push('통합관리시트');
+      if (!clientsSheet) missing.push('clients');
+      if (!projectsSheet) missing.push('projects');
+      if (!milestonesSheet) missing.push('milestones');
+
+      var existingSheetNames = ss.getSheets().map(function(sheet) {
+        return sheet.getName();
+      }).join(', ');
+
+      throw new Error(
+        '필수 시트를 찾을 수 없습니다. 누락: '
+        + missing.join('/')
+        + '\n현재 스프레드시트 탭: '
+        + existingSheetNames
+      );
     }
 
     var anchors = collectAnchorRows_(sourceSheet);
@@ -280,7 +299,7 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
 function setupSyncExecutionButton_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui = SpreadsheetApp.getUi();
-  var sourceSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.SOURCE_SHEET);
+  var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
 
   if (!sourceSheet) {
     ui.alert('통합관리시트를 찾을 수 없어 실행 버튼을 만들 수 없습니다.');
@@ -311,7 +330,8 @@ function onEdit(e) {
   var range = e.range;
   var sheet = range.getSheet();
 
-  if (sheet.getName() !== INTERIOR_SYNC_CONFIG.SOURCE_SHEET) return;
+  var sourceSheet = getSheetByAliases_(sheet.getParent(), INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
+  if (!sourceSheet || sheet.getSheetId() !== sourceSheet.getSheetId()) return;
   if (range.getA1Notation() !== INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL) return;
 
   var editedValue = (e.value || '').toString().toUpperCase();
@@ -323,6 +343,29 @@ function onEdit(e) {
     // 실행 후 버튼 상태를 자동 해제해 다음 실행을 쉽게 합니다.
     sheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL).setValue(false);
   }
+}
+
+/** 별칭 목록 기준으로 시트를 조회합니다. (정확 일치 우선, 대소문자 무시 보조) */
+function getSheetByAliases_(ss, aliases) {
+  if (!ss || !aliases || aliases.length === 0) return null;
+
+  for (var i = 0; i < aliases.length; i++) {
+    var exact = ss.getSheetByName(aliases[i]);
+    if (exact) return exact;
+  }
+
+  var normalizedAliasMap = {};
+  for (var j = 0; j < aliases.length; j++) {
+    normalizedAliasMap[(aliases[j] || '').toString().trim().toLowerCase()] = true;
+  }
+
+  var sheets = ss.getSheets();
+  for (var k = 0; k < sheets.length; k++) {
+    var normalizedSheetName = (sheets[k].getName() || '').toString().trim().toLowerCase();
+    if (normalizedAliasMap[normalizedSheetName]) return sheets[k];
+  }
+
+  return null;
 }
 
 /** 고객ID 생성: 고객명 + 연락처 마지막 4자리 숫자 */
