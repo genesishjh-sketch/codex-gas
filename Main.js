@@ -23,6 +23,11 @@ function onOpen() {
     .addItem('🧪 오류파악', 'runDiagnostics')
     .addToUi();
 
+  // 인테리어 DB 동기화 메뉴 추가
+  try {
+    addInteriorSyncMenu_();
+  } catch (e) {}
+
   // ✅ “열 때만” 진행 체크 (조용히)
   try {
     runDriveCheckActive(true);
