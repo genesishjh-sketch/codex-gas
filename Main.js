@@ -268,5 +268,94 @@ function renumberByBalanceDate() {
     sheet.getRange(block.row, CONFIG.POS_NO.col).setValue(value);
   });
 
+  try {
+    sortGroupsByHierarchy();
+  } catch (e) {
+    ui.alert("❌ 그룹 정렬 중 오류가 발생했습니다.\n" + (e && e.message ? e.message : e));
+    return;
+  }
+
   ui.alert("✅ 잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건");
+}
+
+/** 그룹(9행) 단위로 우선순위에 따라 정렬 */
+function sortGroupsByHierarchy() {
+  var sheet = getMainSheet_();
+  var blockHeight = getBlockHeight_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.START_ROW) return;
+
+  var lastCol = sheet.getLastColumn();
+  var groups = [];
+
+  function isEmpty_(val) {
+    if (val === null || val === undefined) return true;
+    if (val instanceof Date) return false;
+    return String(val).trim() === "";
+  }
+
+  function compareValues_(a, b) {
+    if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+    if (typeof a === "number" && typeof b === "number") return a - b;
+    return String(a).localeCompare(String(b));
+  }
+
+  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+    var bVal = sheet.getRange(r, 2).getValue();
+    var cVal = sheet.getRange(r + 1, 3).getValue();
+    var hasB = !isEmpty_(bVal);
+    var hasC = !isEmpty_(cVal);
+    var priority = 3;
+    if (hasB) {
+      priority = 1;
+    } else if (hasC) {
+      priority = 2;
+    }
+    groups.push({
+      startRow: r,
+      bVal: bVal,
+      priority: priority,
+      originalIndex: groups.length
+    });
+  }
+
+  if (groups.length === 0) return;
+
+  var sortedGroups = groups.slice().sort(function(a, b) {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    if (a.priority === 1) {
+      var cmp = compareValues_(a.bVal, b.bVal);
+      if (cmp !== 0) return cmp;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+
+  var needsMove = sortedGroups.some(function(group, index) {
+    return group.startRow !== CONFIG.START_ROW + index * blockHeight;
+  });
+  if (!needsMove) return;
+
+  // 원본을 임시 영역으로 복사한 뒤 정렬 순서대로 다시 복사한다.
+  var totalRows = groups.length * blockHeight;
+  var tempStartRow = lastRow + 1;
+  sheet.insertRowsAfter(lastRow, totalRows);
+
+  var tempRow = tempStartRow;
+  groups.forEach(function(group) {
+    var source = sheet.getRange(group.startRow, 1, blockHeight, lastCol);
+    var target = sheet.getRange(tempRow, 1, blockHeight, lastCol);
+    source.copyTo(target, { contentsOnly: false });
+    tempRow += blockHeight;
+  });
+
+  var targetRow = CONFIG.START_ROW;
+  sortedGroups.forEach(function(group) {
+    var sourceRow = tempStartRow + group.originalIndex * blockHeight;
+    var source = sheet.getRange(sourceRow, 1, blockHeight, lastCol);
+    var target = sheet.getRange(targetRow, 1, blockHeight, lastCol);
+    source.copyTo(target, { contentsOnly: false });
+    targetRow += blockHeight;
+  });
+
+  sheet.deleteRows(tempStartRow, totalRows);
 }
