@@ -11,14 +11,20 @@ var INTERIOR_SYNC_CONFIG = {
   SOURCE_SHEET: '통합관리시트',
   TARGET_CLIENTS: 'clients',
   TARGET_PROJECTS: 'projects',
-  TARGET_MILESTONES: 'milestones'
+  TARGET_MILESTONES: 'milestones',
+  SYNC_BUTTON_CELL: 'A1',
+  SYNC_BUTTON_LABEL_CELL: 'B1'
 };
 
-/** 스프레드시트 열기 시 사용자 메뉴 생성 */
+/**
+ * (호환용) 별도 메뉴가 필요한 환경에서 사용할 수 있는 메뉴 생성 함수
+ * 실제 기본 메뉴 등록은 Main.js의 onOpen()에서 처리합니다.
+ */
 function addInteriorSyncMenu_() {
   SpreadsheetApp.getUi()
     .createMenu('인테리어 관리')
     .addItem('DB 동기화 실행', 'runInteriorDbSync')
+    .addItem('실행 버튼 만들기(체크박스)', 'setupSyncExecutionButton_')
     .addToUi();
 }
 
@@ -263,6 +269,59 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   if (newRows && newRows.length > 0) {
     var appendStart = milestonesSheet.getLastRow() + 1;
     milestonesSheet.getRange(appendStart, 1, newRows.length, newRows[0].length).setValues(newRows);
+  }
+}
+
+/**
+ * 통합관리시트에 체크박스 실행 버튼을 생성합니다.
+ * - A1: 체크박스(실행 스위치)
+ * - B1: 안내 문구
+ */
+function setupSyncExecutionButton_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var sourceSheet = ss.getSheetByName(INTERIOR_SYNC_CONFIG.SOURCE_SHEET);
+
+  if (!sourceSheet) {
+    ui.alert('통합관리시트를 찾을 수 없어 실행 버튼을 만들 수 없습니다.');
+    return;
+  }
+
+  var buttonCell = sourceSheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL);
+  var labelCell = sourceSheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_LABEL_CELL);
+
+  buttonCell.insertCheckboxes();
+  buttonCell.setValue(false);
+  buttonCell.setNote('체크하면 DB 동기화를 실행하고 자동으로 체크가 해제됩니다.');
+
+  labelCell.setValue('✅ DB 동기화 실행 버튼 (체크 시 실행)');
+
+  ss.toast('통합관리시트에 실행 버튼(체크박스)을 생성했습니다.', '인테리어 관리', 5);
+  ui.alert('실행 버튼을 만들었습니다.\n통합관리시트 A1 체크박스를 클릭하면 동기화가 실행됩니다.');
+}
+
+/**
+ * 체크박스 기반 실행 버튼 처리
+ * - 통합관리시트 A1이 TRUE로 변경되면 동기화 실행
+ * - 실행 후 체크박스를 FALSE로 원복
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+
+  var range = e.range;
+  var sheet = range.getSheet();
+
+  if (sheet.getName() !== INTERIOR_SYNC_CONFIG.SOURCE_SHEET) return;
+  if (range.getA1Notation() !== INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL) return;
+
+  var editedValue = (e.value || '').toString().toUpperCase();
+  if (editedValue !== 'TRUE') return;
+
+  try {
+    runInteriorDbSync();
+  } finally {
+    // 실행 후 버튼 상태를 자동 해제해 다음 실행을 쉽게 합니다.
+    sheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL).setValue(false);
   }
 }
 
