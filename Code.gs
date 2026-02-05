@@ -16,6 +16,19 @@ var INTERIOR_SYNC_CONFIG = {
   SYNC_BUTTON_LABEL_CELL: 'B1'
 };
 
+
+/**
+ * (호환용) 별도 메뉴가 필요한 환경에서 사용할 수 있는 메뉴 생성 함수
+ * 실제 기본 메뉴 등록은 Main.js의 onOpen()에서 처리합니다.
+ */
+function addInteriorSyncMenu_() {
+  SpreadsheetApp.getUi()
+    .createMenu('인테리어 관리')
+    .addItem('DB 동기화 실행', 'runInteriorDbSync')
+    .addItem('실행 버튼 만들기(체크박스)', 'setupSyncExecutionButton_')
+    .addToUi();
+}
+
 /**
  * 메인 실행 함수
  * - Source 블록 구조를 순회하여 clients/projects UPSERT
