@@ -2,7 +2,7 @@
  *
  * 폴더 생성:
  * - 블록 기준 r+1~r+4 (R열) 텍스트를 폴더명으로 사용
- * - 상위 폴더에 생성, S열에 링크 삽입
+ * - 스프레드시트 부모 폴더의 "01 프로젝트관리" 하위에 생성, S열에 링크 삽입
  * - 링크 있으면 유지, 같은 이름 폴더는 재사용
  * - 완료/취소 블록 스킵
  * - 연속 빈 블록 N개면 중단
@@ -16,7 +16,8 @@ function createFoldersBatch(isSilent, force) {
   if (lastRow < CONFIG.START_ROW) return { summary: "No data", successList: [], failedList: [] };
 
   var stopCtl = makeStopController_();
-  var parentFolder = DriveApp.getFileById(ss.getId()).getParents().next();
+  var spreadsheetParentFolder = DriveApp.getFileById(ss.getId()).getParents().next();
+  var parentFolder = getOrCreateProjectRootFolder_(spreadsheetParentFolder);
   var templateUrl = getTemplateUrl_(sheet);
   var templateId = templateUrl ? extractIdFromUrl(templateUrl) : "";
 
@@ -116,6 +117,12 @@ function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
 
   var existing = parentFolder.getFoldersByName(projectName);
   return existing.hasNext() ? existing.next() : parentFolder.createFolder(projectName);
+}
+
+function getOrCreateProjectRootFolder_(spreadsheetParentFolder) {
+  var rootName = "01 프로젝트관리";
+  var existing = spreadsheetParentFolder.getFoldersByName(rootName);
+  return existing.hasNext() ? existing.next() : spreadsheetParentFolder.createFolder(rootName);
 }
 
 function formatProjectDate_(value, cell) {
