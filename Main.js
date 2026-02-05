@@ -20,6 +20,9 @@ function onOpen() {
     .addItem('👤 연락처 동기화', 'runContactSync')
     .addItem('🔍 연락처 로그 점검', 'runContactAudit')
     .addSeparator()
+    .addItem('🗂️ DB 동기화 실행', 'runInteriorDbSync')
+    .addItem('☑️ DB 동기화 버튼 만들기', 'setupSyncExecutionButton_')
+    .addSeparator()
     .addItem('🧪 오류파악', 'runDiagnostics')
     .addToUi();
 
