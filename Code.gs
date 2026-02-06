@@ -78,10 +78,20 @@ function runInteriorDbSync() {
     var projectsRows = [];
     var milestonesRows = [];
     var projectCodesToRefresh = {};
+    var invalidRecords = [];
 
     anchors.forEach(function(anchorRow) {
       var record = buildRecordFromAnchor_(sourceSheet, anchorRow);
       if (!record.projectCode) return;
+
+      if (!isValidProjectCodeFormat_(record.projectCode) || !isValidClientIdFormat_(record.clientId)) {
+        invalidRecords.push({
+          row: anchorRow,
+          projectCode: record.projectCode,
+          clientId: record.clientId
+        });
+        return;
+      }
 
       clientsRows.push([record.clientId, record.clientName, record.phone]);
       projectsRows.push([
@@ -98,6 +108,19 @@ function runInteriorDbSync() {
       projectCodesToRefresh[record.projectCode] = true;
       Array.prototype.push.apply(milestonesRows, record.milestones);
     });
+
+    if (invalidRecords.length > 0) {
+      var invalidDetails = invalidRecords.map(function(record) {
+        return '행 ' + record.row + ': ' + record.projectCode + ' / ' + record.clientId;
+      }).join('\n');
+
+      ui.alert(
+        '프로젝트 코드 또는 고객 ID 형식이 올바르지 않아 동기화를 중단했습니다.\n'
+        + '예시) 250831 멱살반 양수정님 (성산동) / 양수정7864\n'
+        + invalidDetails
+      );
+      return;
+    }
 
     upsertByKey_(clientsSheet, clientsRows, 1);
     upsertByKey_(projectsSheet, projectsRows, 1);
@@ -346,6 +369,22 @@ function getSheetByAliases_(ss, aliases) {
   }
 
   return null;
+}
+
+/** 프로젝트 코드 형식 검사: "YYMMDD ... ...님 (지역)" */
+function isValidProjectCodeFormat_(projectCode) {
+  var trimmed = (projectCode || '').toString().trim();
+  if (!trimmed) return false;
+  var pattern = /^\d{6}\s+.+\s+.+님\s+\(.+\)$/;
+  return pattern.test(trimmed);
+}
+
+/** 고객 ID 형식 검사: "이름+4자리숫자" */
+function isValidClientIdFormat_(clientId) {
+  var trimmed = (clientId || '').toString().trim();
+  if (!trimmed) return false;
+  var pattern = /^[^\d\s]+\d{4}$/;
+  return pattern.test(trimmed);
 }
 
 /** 고객ID 생성: 고객명 + 연락처 마지막 4자리 숫자 */
