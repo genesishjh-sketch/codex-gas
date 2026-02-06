@@ -20,9 +20,7 @@ var INTERIOR_SYNC_CONFIG = {
     clients: ['client_id', 'client_name', 'phone'],
     projects: ['project_code', 'client_id', 'project_type', 'contract_date', 'balance_date', 'address', 'memo', 'links'],
     milestones: ['project_code', 'section', 'step_name', 'plan_date', 'done_date', 'manager']
-  },
-  SYNC_BUTTON_CELL: 'A1',
-  SYNC_BUTTON_LABEL_CELL: 'B1'
+  }
 };
 
 /**
@@ -31,9 +29,8 @@ var INTERIOR_SYNC_CONFIG = {
  */
 function addInteriorSyncMenu_() {
   SpreadsheetApp.getUi()
-    .createMenu('인테리어 관리')
+    .createMenu('🛋️ 인테리어 관리')
     .addItem('DB 동기화 실행', 'runInteriorDbSync')
-    .addItem('실행 버튼 만들기(체크박스)', 'setupSyncExecutionButton_')
     .addToUi();
 }
 
@@ -73,7 +70,7 @@ function runInteriorDbSync() {
 
     var anchors = collectAnchorRows_(sourceSheet);
     if (anchors.length === 0) {
-      ss.toast('동기화할 프로젝트 코드가 없습니다.', '인테리어 관리', 5);
+      ss.toast('동기화할 프로젝트 코드가 없습니다.', '🛋️ 인테리어 관리', 5);
       return;
     }
 
@@ -113,7 +110,7 @@ function runInteriorDbSync() {
       + '- projects: ' + projectsRows.length + '건 반영\n'
       + '- milestones: ' + milestonesRows.length + '건 반영';
 
-    ss.toast('동기화가 완료되었습니다.', '인테리어 관리', 5);
+    ss.toast('동기화가 완료되었습니다.', '🛋️ 인테리어 관리', 5);
     ui.alert(doneMessage);
   } catch (err) {
     ui.alert('동기화 중 오류가 발생했습니다.\n' + err.message);
@@ -183,8 +180,8 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
   var clientId = makeClientId_(clientName, phone);
 
   var projectType = readCellDisplay_(sourceSheet, anchorRow - 6, 3);
-  var contractDate = toYmd_(sourceSheet.getRange(anchorRow - 3, 4).getValue());
-  var balanceDate = toYmd_(sourceSheet.getRange(anchorRow - 2, 4).getValue());
+  var contractDate = toYmd_(readCellValue_(sourceSheet, anchorRow - 3, 4));
+  var balanceDate = toYmd_(readCellValue_(sourceSheet, anchorRow - 2, 4));
 
   var addr1 = readCellDisplay_(sourceSheet, anchorRow - 6, 6);
   var addr2 = readCellDisplay_(sourceSheet, anchorRow - 5, 6);
@@ -205,8 +202,8 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
     if (r1 < 1) continue;
 
     var stepName = readCellDisplay_(sourceSheet, r1, 7);
-    var planDate1 = toYmd_(sourceSheet.getRange(r1, 8).getValue());
-    var doneDate = toYmd_(sourceSheet.getRange(r1, 9).getValue());
+    var planDate1 = toYmd_(readCellValue_(sourceSheet, r1, 8));
+    var doneDate = toYmd_(readCellValue_(sourceSheet, r1, 9));
 
     if (stepName || planDate1 || doneDate) {
       milestones.push([
@@ -225,7 +222,7 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
     if (r2 < 1) continue;
 
     var category = readCellDisplay_(sourceSheet, r2, 13);
-    var planDate2 = toYmd_(sourceSheet.getRange(r2, 14).getValue());
+    var planDate2 = toYmd_(readCellValue_(sourceSheet, r2, 14));
     var manager = readCellDisplay_(sourceSheet, r2, 16);
 
     if (planDate2) {
@@ -328,55 +325,6 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
  * - A1: 체크박스(실행 스위치)
  * - B1: 안내 문구
  */
-function setupSyncExecutionButton_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ui = SpreadsheetApp.getUi();
-  var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
-
-  if (!sourceSheet) {
-    ui.alert('통합관리시트를 찾을 수 없어 실행 버튼을 만들 수 없습니다.');
-    return;
-  }
-
-  var buttonCell = sourceSheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL);
-  var labelCell = sourceSheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_LABEL_CELL);
-
-  buttonCell.insertCheckboxes();
-  buttonCell.setValue(false);
-  buttonCell.setNote('체크하면 DB 동기화를 실행하고 자동으로 체크가 해제됩니다.');
-
-  labelCell.setValue('✅ DB 동기화 실행 버튼 (체크 시 실행)');
-
-  ss.toast('통합관리시트에 실행 버튼(체크박스)을 생성했습니다.', '인테리어 관리', 5);
-  ui.alert('실행 버튼을 만들었습니다.\n통합관리시트 A1 체크박스를 클릭하면 동기화가 실행됩니다.');
-}
-
-/**
- * 체크박스 기반 실행 버튼 처리
- * - 통합관리시트 A1이 TRUE로 변경되면 동기화 실행
- * - 실행 후 체크박스를 FALSE로 원복
- */
-function onEdit(e) {
-  if (!e || !e.range) return;
-
-  var range = e.range;
-  var sheet = range.getSheet();
-
-  var sourceSheet = getSheetByAliases_(sheet.getParent(), INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
-  if (!sourceSheet || sheet.getSheetId() !== sourceSheet.getSheetId()) return;
-  if (range.getA1Notation() !== INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL) return;
-
-  var editedValue = (e.value || '').toString().toUpperCase();
-  if (editedValue !== 'TRUE') return;
-
-  try {
-    runInteriorDbSync();
-  } finally {
-    // 실행 후 버튼 상태를 자동 해제해 다음 실행을 쉽게 합니다.
-    sheet.getRange(INTERIOR_SYNC_CONFIG.SYNC_BUTTON_CELL).setValue(false);
-  }
-}
-
 /** 별칭 목록 기준으로 시트를 조회합니다. (정확 일치 우선, 대소문자 무시 보조) */
 function getSheetByAliases_(ss, aliases) {
   if (!ss || !aliases || aliases.length === 0) return null;
@@ -412,6 +360,12 @@ function makeClientId_(name, phone) {
 function readCellDisplay_(sheet, row, col) {
   if (row < 1 || col < 1) return '';
   return (sheet.getRange(row, col).getDisplayValue() || '').toString().trim();
+}
+
+/** 셀 원본값 읽기 (행/열 유효성 보호) */
+function readCellValue_(sheet, row, col) {
+  if (row < 1 || col < 1) return '';
+  return sheet.getRange(row, col).getValue();
 }
 
 /** 날짜/문자열을 YYYY-MM-DD 문자열로 통일 */
