@@ -16,6 +16,11 @@ var INTERIOR_SYNC_CONFIG = {
   TARGET_CLIENTS_ALIASES: ['clients', 'Clients', '고객', '고객DB'],
   TARGET_PROJECTS_ALIASES: ['projects', 'Projects', '프로젝트', '프로젝트DB'],
   TARGET_MILESTONES_ALIASES: ['milestones', 'Milestones', '마일스톤', '일정'],
+  TARGET_HEADERS: {
+    clients: ['client_id', 'client_name', 'phone'],
+    projects: ['project_code', 'client_id', 'project_type', 'contract_date', 'balance_date', 'address', 'memo', 'links'],
+    milestones: ['project_code', 'section', 'step_name', 'plan_date', 'done_date', 'manager']
+  },
   SYNC_BUTTON_CELL: 'A1',
   SYNC_BUTTON_LABEL_CELL: 'B1'
 };
@@ -43,9 +48,9 @@ function runInteriorDbSync() {
 
   try {
     var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
-    var clientsSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_CLIENTS_ALIASES);
-    var projectsSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_PROJECTS_ALIASES);
-    var milestonesSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.TARGET_MILESTONES_ALIASES);
+    var clientsSheet = getOrCreateTargetSheet_(ss, INTERIOR_SYNC_CONFIG.TARGET_CLIENTS_ALIASES, INTERIOR_SYNC_CONFIG.TARGET_CLIENTS, INTERIOR_SYNC_CONFIG.TARGET_HEADERS.clients);
+    var projectsSheet = getOrCreateTargetSheet_(ss, INTERIOR_SYNC_CONFIG.TARGET_PROJECTS_ALIASES, INTERIOR_SYNC_CONFIG.TARGET_PROJECTS, INTERIOR_SYNC_CONFIG.TARGET_HEADERS.projects);
+    var milestonesSheet = getOrCreateTargetSheet_(ss, INTERIOR_SYNC_CONFIG.TARGET_MILESTONES_ALIASES, INTERIOR_SYNC_CONFIG.TARGET_MILESTONES, INTERIOR_SYNC_CONFIG.TARGET_HEADERS.milestones);
 
     if (!sourceSheet || !clientsSheet || !projectsSheet || !milestonesSheet) {
       var missing = [];
@@ -114,6 +119,33 @@ function runInteriorDbSync() {
     ui.alert('동기화 중 오류가 발생했습니다.\n' + err.message);
     throw err;
   }
+}
+
+/** 대상 시트가 없으면 자동 생성하고 헤더를 준비합니다. */
+function getOrCreateTargetSheet_(ss, aliases, defaultName, headers) {
+  var sheet = getSheetByAliases_(ss, aliases);
+  if (!sheet) {
+    sheet = ss.insertSheet(defaultName);
+  }
+
+  ensureHeaderRow_(sheet, headers || []);
+  return sheet;
+}
+
+/** 헤더가 비어 있으면 1행에 헤더를 입력합니다. */
+function ensureHeaderRow_(sheet, headers) {
+  if (!sheet || !headers || headers.length === 0) return;
+
+  var maxCols = Math.max(sheet.getMaxColumns(), headers.length);
+  var headerRange = sheet.getRange(1, 1, 1, maxCols);
+  var firstRowValues = headerRange.getDisplayValues()[0];
+  var hasAnyValue = firstRowValues.some(function(v) {
+    return (v || '').toString().trim() !== '';
+  });
+
+  if (hasAnyValue) return;
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 }
 
 /** B열을 순회하여 Anchor(프로젝트 코드 존재 행) 수집 */
