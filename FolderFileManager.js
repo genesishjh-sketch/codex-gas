@@ -161,12 +161,14 @@ function copyTemplateFile_(templateId, fileName, parentFolder) {
 }
 
 function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight) {
-  var endRow = blockStartRow + Math.max(1, blockHeight - 2);
-  var rangeText = "B" + blockStartRow + ":K" + endRow;
-  var formula = '=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1GgdT1H-IEWWJDpuD14IURuZZWL9y_1smM9eUSXQMPoo/edit", "통합관리시트!' + rangeText + '")';
+  var sourceSpreadsheetId = "1GgdT1H-IEWWJDpuD14IURuZZWL9y_1smM9eUSXQMPoo";
+  var sourceSheetName = "통합관리시트";
+  var sourceSs = SpreadsheetApp.openById(sourceSpreadsheetId);
+  var sourceSheet = sourceSs.getSheetByName(sourceSheetName);
+  var sourceText = sourceSheet.getRange(blockStartRow, 3).getDisplayValue();
   var fileSs = SpreadsheetApp.openById(spreadsheetId);
   var targetSheet = fileSs.getSheets()[0];
-  targetSheet.getRange("B3").setFormula(formula);
+  targetSheet.getRange("B3").setValue(sourceText);
 }
 
 function getOrCreateSubFolder_(projectFolder, label) {
