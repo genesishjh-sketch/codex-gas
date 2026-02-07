@@ -178,7 +178,7 @@ function collectAnchorRows_(sourceSheet) {
 
   for (var r = 1; r <= colBValues.length; r++) {
     var projectCode = (colBValues[r - 1][0] || '').toString().trim();
-    if (projectCode) anchors.push(r);
+    if (projectCode && isProjectCodeCandidate_(projectCode)) anchors.push(r);
   }
   return anchors;
 }
@@ -377,6 +377,13 @@ function isValidProjectCodeFormat_(projectCode) {
   if (!trimmed) return false;
   var pattern = /^\d{6}\s+.+\s+.+님\s+\(.+\)$/;
   return pattern.test(trimmed);
+}
+
+/** 프로젝트 코드 후보 검사: 날짜 6자리로 시작하는지 */
+function isProjectCodeCandidate_(projectCode) {
+  var trimmed = (projectCode || '').toString().trim();
+  if (!trimmed) return false;
+  return /^\d{6}/.test(trimmed);
 }
 
 /** 고객 ID 형식 검사: "이름+4자리숫자" */
