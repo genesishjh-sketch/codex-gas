@@ -165,7 +165,7 @@ function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight) {
   var sourceSheetName = "통합관리시트";
   var sourceSs = SpreadsheetApp.openById(sourceSpreadsheetId);
   var sourceSheet = sourceSs.getSheetByName(sourceSheetName);
-  var sourceText = sourceSheet.getRange("C4").getDisplayValue();
+  var sourceText = sourceSheet.getRange(blockStartRow, 3).getDisplayValue();
   var fileSs = SpreadsheetApp.openById(spreadsheetId);
   var targetSheet = fileSs.getSheets()[0];
   targetSheet.getRange("B3").setValue(sourceText);
