@@ -269,10 +269,11 @@ function syncContactsBatch(isSilent) {
 
   var contactsState = getContactsServiceState_();
   if (!contactsState.ok) {
+    var unavailableMessage = getContactsUnavailableMessage_(contactsState.reason, "연락처 동기화");
     if (!isSilent) {
-      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(contactsState.reason, "연락처 동기화"));
+      SpreadsheetApp.getUi().alert(unavailableMessage);
     }
-    return { summary: contactsState.reason || "ContactsApp unavailable" };
+    return { summary: unavailableMessage };
   }
 
   var stopCtl = makeStopController_();
@@ -405,10 +406,11 @@ function auditContactLog_(isSilent) {
   var logSheet = getContactLogSheet_();
   var state = getContactsServiceState_();
   if (!state.ok) {
+    var unavailableMessage = getContactsUnavailableMessage_(state.reason, "연락처 점검");
     if (!isSilent) {
-      SpreadsheetApp.getUi().alert(getContactsUnavailableMessage_(state.reason, "연락처 점검"));
+      SpreadsheetApp.getUi().alert(unavailableMessage);
     }
-    return { summary: state.reason || "ContactsApp unavailable" };
+    return { summary: unavailableMessage };
   }
   var lastRow = logSheet.getLastRow();
   if (lastRow < 2) {
