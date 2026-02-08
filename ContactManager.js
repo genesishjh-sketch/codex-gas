@@ -160,18 +160,58 @@ function getContactsUnavailableMessage_(reason, actionLabel) {
     }
   }
   if (reason === "contacts_deprecated") {
-    return "⚠️ Contacts API가 종료되어 " + label + "을(를) 건너뜁니다. People API로 이전이 필요합니다.";
+    return "⚠️ Contacts API가 종료되어 " + label + " 작업을 건너뜁니다. People API로 이전이 필요합니다.";
   }
   if (reason === "people_scope") {
-    return "⚠️ People API 권한이 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 및 스코프를 확인하세요.";
+    return "⚠️ People API 권한이 없어 " + label + " 작업을 건너뜁니다. 고급 서비스 및 스코프를 확인하세요.";
   }
   if (reason === "people_disabled") {
-    return "⚠️ People API가 프로젝트에서 비활성화되어 " + label + "을(를) 건너뜁니다. 고급 서비스/Google Cloud 콘솔에서 People API를 활성화하세요.";
+    return "⚠️ People API가 프로젝트에서 비활성화되어 " + label + " 작업을 건너뜁니다. 고급 서비스/Google Cloud 콘솔에서 People API를 활성화하세요.";
   }
   if (reason === "people_unavailable" || reason === "people_error") {
-    return "⚠️ People API를 사용할 수 없어 " + label + "을(를) 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
+    return "⚠️ People API를 사용할 수 없어 " + label + " 작업을 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
   }
-  return "⚠️ ContactsApp을 사용할 수 없어 " + label + "을(를) 건너뜁니다.";
+  return "⚠️ ContactsApp을 사용할 수 없어 " + label + " 작업을 건너뜁니다.";
+}
+
+function getPeopleServiceMessage_(reason) {
+  if (!reason) return "⚠️ People API 상태를 확인할 수 없습니다.";
+  if (reason === "people_scope") {
+    return "⚠️ People API 권한이 없습니다. 고급 서비스 및 스코프를 확인하세요.";
+  }
+  if (reason === "people_disabled") {
+    return "⚠️ People API가 프로젝트에서 비활성화되어 있습니다. Google Cloud 콘솔에서 People API를 활성화하세요.";
+  }
+  if (reason === "people_unavailable") {
+    return "⚠️ People API 고급 서비스를 사용할 수 없습니다. 서비스가 ON인지 확인하세요.";
+  }
+  if (reason === "people_error") {
+    return "⚠️ People API 호출에 실패했습니다. 권한 재승인 후 다시 시도하세요.";
+  }
+  return "⚠️ People API 상태: " + reason;
+}
+
+function getContactsDiagnosticsSummary_() {
+  var messages = [];
+  var peopleState = getPeopleServiceState_();
+  if (peopleState.ok) {
+    messages.push("✅ People API 호출 가능");
+  } else {
+    messages.push(getPeopleServiceMessage_(peopleState.reason));
+  }
+
+  var contactsState = getContactsServiceState_();
+  if (contactsState.ok) {
+    messages.push("✅ 연락처 서비스: " + (contactsState.provider === "people" ? "People API" : "ContactsApp"));
+  } else {
+    messages.push(getContactsUnavailableMessage_(contactsState.reason, "연락처 작업"));
+  }
+
+  if (typeof ContactsApp === "undefined") {
+    messages.push("ℹ️ ContactsApp 객체가 없습니다. (Apps Script 기본 제공 서비스)");
+  }
+
+  return messages.join("\n");
 }
 
 function findPeopleContactsByPhone_(normalizedPhone) {

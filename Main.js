@@ -19,6 +19,7 @@ function onOpen() {
     .addSeparator()
     .addItem('👤 연락처 동기화', 'runContactSync')
     .addItem('🔍 연락처 로그 점검', 'runContactAudit')
+    .addItem('🧭 연락처 서비스 진단', 'runContactServiceDiagnostics')
     .addSeparator()
     .addItem('🧪 오류파악', 'runDiagnostics')
     .addToUi();
@@ -80,6 +81,15 @@ function runContactAudit() {
     return;
   }
   auditContactLog_(false);
+}
+
+function runContactServiceDiagnostics() {
+  if (typeof getContactsDiagnosticsSummary_ !== "function") {
+    SpreadsheetApp.getUi().alert("⚠️ 연락처 진단 함수가 없습니다.");
+    return;
+  }
+  var summary = getContactsDiagnosticsSummary_();
+  SpreadsheetApp.getUi().alert("🧭 연락처 서비스 진단\n\n" + summary);
 }
 
 /** 드라이브 체크: 진행만(열 때) */
