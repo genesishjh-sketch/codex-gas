@@ -75,6 +75,11 @@ function phoneDigits_(raw) {
   return d;
 }
 
+function isBlockedContactPhone_(raw) {
+  var d = phoneDigits_(raw);
+  return d === "01000000000";
+}
+
 function personHasPhoneDigits_(person, targetDigits) {
   if (!person || !person.phoneNumbers || !targetDigits) return false;
   var td = phoneDigits_(targetDigits);
@@ -358,6 +363,9 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
   var normalized = normalizePhone_(phone);
   var digits = phoneDigits_(normalized);
   if (!digits) return { ok: false, skipped: true, reason: "invalid_phone" };
+  if (isBlockedContactPhone_(digits)) {
+    return { ok: false, skipped: true, reason: "blocked_phone" };
+  }
 
   var safeName = (displayName || normalized).toString().trim() || normalized;
   var safeAddress = (addressLine || "").toString().trim();
