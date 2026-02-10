@@ -126,6 +126,7 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
 var PEOPLE_READ_MASK = "names,phoneNumbers,addresses,biographies,metadata";
 
 var CONTACTS_SERVICE_STATE_ = null;
+var PEOPLE_READ_QUOTA_EXCEEDED_ = false;
 
 function isContactsDeprecatedError_(error) {
   var msg = String(error && (error.message || error) || "");
@@ -142,6 +143,12 @@ function isPeopleApiDisabledError_(error) {
   return msg.indexOf("API has not been used") >= 0 ||
     msg.indexOf("is not enabled") >= 0 ||
     msg.indexOf("has not been used in project") >= 0;
+}
+
+function isPeopleReadQuotaExceededError_(error) {
+  var msg = String(error && (error.message || error) || "");
+  return msg.indexOf("Quota exceeded") >= 0 &&
+    msg.indexOf("Critical read requests") >= 0;
 }
 
 function getPeopleServiceState_() {
@@ -269,6 +276,8 @@ function findContactPersonByPhone_(phone) {
   var digits = phoneDigits_(phone);
   if (!digits) return null;
 
+  if (PEOPLE_READ_QUOTA_EXCEEDED_) return null;
+
   function search_(query) {
     if (!query) return [];
     var response;
@@ -279,11 +288,23 @@ function findContactPersonByPhone_(phone) {
         pageSize: 30
       });
     } catch (e) {
-      response = People.People.searchContacts({
-        query: query,
-        personFields: PEOPLE_READ_MASK,
-        pageSize: 30
-      });
+      if (isPeopleReadQuotaExceededError_(e)) {
+        PEOPLE_READ_QUOTA_EXCEEDED_ = true;
+        return [];
+      }
+      try {
+        response = People.People.searchContacts({
+          query: query,
+          personFields: PEOPLE_READ_MASK,
+          pageSize: 30
+        });
+      } catch (e2) {
+        if (isPeopleReadQuotaExceededError_(e2)) {
+          PEOPLE_READ_QUOTA_EXCEEDED_ = true;
+          return [];
+        }
+        throw e2;
+      }
     }
     var results = (response && response.results) ? response.results : [];
     var matched = [];
@@ -306,6 +327,7 @@ function findContactsByPhone_(normalizedPhone) {
   if (!normalizedPhone) return [];
   var state = getContactsServiceState_();
   if (!state.ok) return [];
+  if (state.provider === "people" && PEOPLE_READ_QUOTA_EXCEEDED_) return [];
   if (state.provider === "people") {
     return findPeopleContactsByPhone_(normalizedPhone);
   }
@@ -374,7 +396,7 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
       if (safeMapUrl) person.biographies = [{ value: safeMapUrl, contentType: "TEXT_PLAIN" }];
 
       People.People.createContact(person);
-      return { ok: true, existed: false, created: true };
+      return { ok: true, existed: false, created: true, readQuotaBypass: PEOPLE_READ_QUOTA_EXCEEDED_ };
     }
 
     var notes = "";
@@ -426,6 +448,7 @@ function syncContactsBatch(isSilent) {
   var logMap = loadContactLogMap_(logSheet);
 
   var created = 0, existed = 0, cached = 0, skipped = 0, failed = 0;
+  var quotaBypass = 0;
 
   var pendingAppends = [];
   var pendingUpdates = [];
@@ -466,7 +489,7 @@ function syncContactsBatch(isSilent) {
       (logResult === "ok" || logResult === "cached_skip"));
     var shouldVerifyLogged = CONFIG.CONTACT_VERIFY_LOGGED !== false;
     var canSkip = shouldSkipByLog;
-    if (shouldSkipByLog && shouldVerifyLogged && normalized) {
+    if (shouldSkipByLog && shouldVerifyLogged && normalized && !PEOPLE_READ_QUOTA_EXCEEDED_) {
       var existing = findContactsByPhone_(normalized);
       if (!existing || existing.length === 0) {
         canSkip = false;
@@ -493,6 +516,8 @@ function syncContactsBatch(isSilent) {
         skipped++;
         continue;
       }
+
+      if (res.readQuotaBypass) quotaBypass++;
 
       if (res.existed) existed++; else created++;
 
@@ -537,6 +562,14 @@ function syncContactsBatch(isSilent) {
     " / 로그스킵 " + cached +
     " / 건너뜀 " + skipped +
     " / 실패 " + failed;
+
+  if (quotaBypass > 0) {
+    summary += " / 읽기쿼터우회 " + quotaBypass;
+  }
+
+  if (PEOPLE_READ_QUOTA_EXCEEDED_) {
+    summary += "\n⚠️ People API 읽기 쿼터 초과로 검색/검증을 건너뛰고 신규 등록 위주로 처리했습니다.";
+  }
 
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 동기화 완료\n" + summary);
   return { summary: summary };
