@@ -49,7 +49,20 @@ function findPhoneInBlock_(sheet, blockStartRow, blockHeight) {
 
   var phoneRegex = /\+?\s*\(?0?1[016789]\)?[\s\-.]?\d{3,4}[\s\-.]?\d{4}/;
   var m = s.match(phoneRegex);
-  return (m && m[0]) ? normalizePhone_(m[0]) : "";
+  if (m && m[0]) return normalizePhone_(m[0]);
+
+  // 과거 동작 호환: 고정 셀에 없으면 블록 전체에서 탐색
+  var maxCols = Math.min(sheet.getLastColumn(), 40);
+  var vals = sheet.getRange(blockStartRow, 1, blockHeight, maxCols).getDisplayValues();
+  for (var i = 0; i < vals.length; i++) {
+    for (var j = 0; j < vals[i].length; j++) {
+      var v = (vals[i][j] || "").toString();
+      var m2 = v.match(phoneRegex);
+      if (m2 && m2[0]) return normalizePhone_(m2[0]);
+    }
+  }
+
+  return "";
 }
 
 function phoneDigits_(raw) {
