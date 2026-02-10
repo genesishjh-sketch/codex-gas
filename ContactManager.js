@@ -47,11 +47,24 @@ function findPhoneInBlock_(sheet, blockStartRow, blockHeight) {
   var raw = sheet.getRange(blockStartRow + phoneCellRowOffset, phoneCol).getDisplayValue();
   var s = (raw || "").toString();
 
-  // 010-0000-0000 / 010 0000 0000 / (010)0000-0000 / 01000000000
-  var phoneRegex = /\(?01[016789]\)?[\s\-.]?\d{3,4}[\s\-.]?\d{4}/;
+  // 010-0000-0000 / 010 0000 0000 / (010)0000-0000 / 01000000000 / +82 형태 일부
+  var phoneRegex = /\+?\s*\(?0?1[016789]\)?[\s\-.]?\d{3,4}[\s\-.]?\d{4}/;
 
   var m = s.match(phoneRegex);
-  return (m && m[0]) ? normalizePhone_(m[0]) : "";
+  if (m && m[0]) return normalizePhone_(m[0]);
+
+  // 과거 동작 호환: 고정 셀에 없으면 블록 전체에서 탐색
+  var maxCols = Math.min(sheet.getLastColumn(), 40);
+  var vals = sheet.getRange(blockStartRow, 1, blockHeight, maxCols).getDisplayValues();
+  for (var i = 0; i < vals.length; i++) {
+    for (var j = 0; j < vals[i].length; j++) {
+      var v = (vals[i][j] || "").toString();
+      var m2 = v.match(phoneRegex);
+      if (m2 && m2[0]) return normalizePhone_(m2[0]);
+    }
+  }
+
+  return "";
 }
 
 function getContactBlockInfo_(sheet, blockStartRow, blockHeight, nameVal) {
@@ -214,14 +227,163 @@ function getContactsDiagnosticsSummary_() {
   return messages.join("\n");
 }
 
-function findPeopleContactsByPhone_(normalizedPhone) {
-  if (!normalizedPhone) return [];
-  var response = People.People.searchContacts({
-    query: normalizedPhone,
-    readMask: "names,phoneNumbers"
+var PEOPLE_READ_MASK = "names,phoneNumbers,addresses,biographies,metadata";
+
+function phoneDigits_(raw) {
+  if (!raw) return "";
+  var d = String(raw).replace(/[^\d]/g, "");
+  if (d.indexOf("82") === 0 && d.length >= 12) {
+    var rest = d.substring(2);
+    if (rest.indexOf("10") === 0 && rest.length === 10) {
+      d = "0" + rest;
+    }
+  }
+  return d;
+}
+
+function personHasPhoneDigits_(person, targetDigits) {
+  if (!person || !person.phoneNumbers || !targetDigits) return false;
+
+  var td = phoneDigits_(targetDigits);
+  for (var i = 0; i < person.phoneNumbers.length; i++) {
+    var ph = person.phoneNumbers[i] || {};
+    var v1 = phoneDigits_(ph.value || "");
+    var v2 = phoneDigits_(ph.canonicalForm || "");
+    if (v1 && v1 === td) return true;
+    if (v2 && v2 === td) return true;
+  }
+  return false;
+}
+
+function findContactPersonByPhone_(normalizedPhone) {
+  if (!normalizedPhone) return null;
+  var digits = phoneDigits_(normalizedPhone);
+  if (!digits) return null;
+
+  var resp = People.People.searchContacts({
+    query: digits,
+    readMask: PEOPLE_READ_MASK,
+    pageSize: 30
   });
-  var results = (response && response.results) ? response.results : [];
-  return results.map(function (item) { return item.person; }).filter(Boolean);
+  var results = (resp && resp.results) ? resp.results : [];
+  for (var i = 0; i < results.length; i++) {
+    var p = results[i].person || results[i];
+    if (personHasPhoneDigits_(p, digits)) return p;
+  }
+
+  var formatted = normalizePhone_(digits);
+  if (!formatted || formatted === digits) return null;
+  resp = People.People.searchContacts({
+    query: formatted,
+    readMask: PEOPLE_READ_MASK,
+    pageSize: 30
+  });
+  results = (resp && resp.results) ? resp.results : [];
+  for (var j = 0; j < results.length; j++) {
+    var p2 = results[j].person || results[j];
+    if (personHasPhoneDigits_(p2, digits)) return p2;
+  }
+  return null;
+}
+
+function findPeopleContactsByPhone_(normalizedPhone) {
+  var found = findContactPersonByPhone_(normalizedPhone);
+  return found ? [found] : [];
+}
+
+function buildPeopleContactPayload_(displayName, normalizedPhone, addressLine, notes) {
+  var safeName = (displayName || normalizedPhone || "").toString().trim();
+  var person = {
+    names: [{ givenName: safeName }],
+    phoneNumbers: [{ value: normalizedPhone, type: "mobile" }]
+  };
+
+  if (notes) {
+    person.biographies = [{ value: notes, contentType: "TEXT_PLAIN" }];
+  }
+  if (addressLine) {
+    person.addresses = [{ formattedValue: addressLine, type: "work" }];
+  }
+  return person;
+}
+
+function createPeopleContact_(displayName, normalizedPhone, addressLine, notes) {
+  var primary = buildPeopleContactPayload_(displayName, normalizedPhone, addressLine, notes);
+  try {
+    People.People.createContact(primary);
+    return;
+  } catch (e) {
+    var msg = String(e && (e.message || e) || "");
+    var recoverable =
+      msg.indexOf("Invalid value") >= 0 ||
+      msg.indexOf("Invalid JSON payload") >= 0 ||
+      msg.indexOf("Invalid field") >= 0;
+    if (!recoverable) throw e;
+  }
+
+  People.People.createContact({
+    names: [{ givenName: (displayName || normalizedPhone || "").toString().trim() }],
+    phoneNumbers: [{ value: normalizedPhone }]
+  });
+}
+
+function shouldReplacePeopleField_(current, nextValue, formatter) {
+  var next = (nextValue || "").toString().trim();
+  if (!next) return false;
+  var currentVal = "";
+  if (current && current.length > 0) {
+    currentVal = formatter(current[0] || {}) || "";
+    currentVal = currentVal.toString().trim();
+  }
+  return currentVal !== next;
+}
+
+function updatePeopleContact_(person, displayName, normalizedPhone, addressLine, notes) {
+  if (!person || !person.resourceName) return false;
+  var full = People.People.get(person.resourceName, { personFields: PEOPLE_READ_MASK });
+
+  var safeName = (displayName || normalizedPhone || "").toString().trim();
+  var needsName = shouldReplacePeopleField_(full.names, safeName, function (n) {
+    return n.givenName || n.displayName || n.unstructuredName || "";
+  });
+  var needsPhone = !personHasPhoneDigits_(full, normalizedPhone);
+  var needsAddress = shouldReplacePeopleField_(full.addresses, addressLine, function (a) {
+    return a.formattedValue || a.value || "";
+  });
+  var needsNote = shouldReplacePeopleField_(full.biographies, notes, function (b) {
+    return b.value || "";
+  });
+
+  var updateFields = [];
+  var patch = {
+    resourceName: full.resourceName,
+    etag: full.etag
+  };
+
+  if (full.metadata) patch.metadata = full.metadata;
+  if (needsName) {
+    patch.names = [{ givenName: safeName }];
+    updateFields.push("names");
+  }
+  if (needsPhone) {
+    patch.phoneNumbers = [{ value: normalizedPhone, type: "mobile" }];
+    updateFields.push("phoneNumbers");
+  }
+  if (needsAddress && addressLine && addressLine.toString().trim()) {
+    patch.addresses = [{ formattedValue: addressLine, type: "work" }];
+    updateFields.push("addresses");
+  }
+  if (needsNote && notes && notes.toString().trim()) {
+    patch.biographies = [{ value: notes, contentType: "TEXT_PLAIN" }];
+    updateFields.push("biographies");
+  }
+
+  if (updateFields.length === 0) return false;
+
+  People.People.updateContact(patch, full.resourceName, {
+    updatePersonFields: updateFields.join(",")
+  });
+  return true;
 }
 
 function findContactsByPhone_(normalizedPhone) {
@@ -256,30 +418,27 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!state.ok) return { ok: false, skipped: true, reason: state.reason };
 
   var normalized = normalizePhone_(phone);
-  var found = findContactsByPhone_(normalized);
-  if (found && found.length > 0) return { ok: true, existed: true };
-
-  var notes = "";
-  if (addressLine) notes += "주소: " + addressLine;
-  if (mapUrl) notes += (notes ? "\n" : "") + "지도: " + mapUrl;
+  var notes = (mapUrl || "").toString().trim();
 
   try {
     if (state.provider === "people") {
-      var person = {
-        names: [{ unstructuredName: displayName || normalized }],
-        phoneNumbers: [{ value: normalized, type: "mobile" }]
-      };
-      if (notes) {
-        person.biographies = [{ value: notes, contentType: "TEXT_PLAIN" }];
+      var foundPerson = findContactPersonByPhone_(normalized);
+      if (foundPerson) {
+        var updated = updatePeopleContact_(foundPerson, displayName, normalized, addressLine, notes);
+        return { ok: true, existed: true, updated: updated };
       }
-      if (addressLine) {
-        person.addresses = [{ value: addressLine }];
-      }
-      People.People.createContact(person);
-      return { ok: true, existed: false };
+      createPeopleContact_(displayName, normalized, addressLine, notes);
+      return { ok: true, existed: false, created: true };
     }
 
-    var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
+    var found = findContactsByPhone_(normalized);
+    if (found && found.length > 0) return { ok: true, existed: true };
+
+    var legacyNotes = "";
+    if (addressLine) legacyNotes += "주소: " + addressLine;
+    if (mapUrl) legacyNotes += (legacyNotes ? "\n" : "") + "지도: " + mapUrl;
+
+    var c = ContactsApp.createContact(displayName || normalized, "", legacyNotes || "");
     c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
 
     try {
