@@ -37,8 +37,8 @@ function loadContactLogMap_(logSheet) {
 }
 
 /**
- * ✅ 전화번호는 고정셀(D열, 블록시작+2)만 읽는다
- * - D6, D15, D24 ...
+ * 전화번호는 고정셀(D열, 블록시작+2)에서 읽는다
+ * - D6, D15, D24 ... 패턴
  */
 function findPhoneInBlock_(sheet, blockStartRow, blockHeight) {
   var phoneCellRowOffset = 2; // blockStartRow + 2 => D6 패턴
@@ -47,11 +47,32 @@ function findPhoneInBlock_(sheet, blockStartRow, blockHeight) {
   var raw = sheet.getRange(blockStartRow + phoneCellRowOffset, phoneCol).getDisplayValue();
   var s = (raw || "").toString();
 
-  // 010-0000-0000 / 010 0000 0000 / (010)0000-0000 / 01000000000
-  var phoneRegex = /\(?01[016789]\)?[\s\-.]?\d{3,4}[\s\-.]?\d{4}/;
-
+  var phoneRegex = /\+?\s*\(?0?1[016789]\)?[\s\-.]?\d{3,4}[\s\-.]?\d{4}/;
   var m = s.match(phoneRegex);
   return (m && m[0]) ? normalizePhone_(m[0]) : "";
+}
+
+function phoneDigits_(raw) {
+  if (!raw) return "";
+  var d = raw.toString().replace(/[^\d]/g, "");
+  if (d.indexOf("82") === 0 && d.length >= 12) {
+    var rest = d.substring(2);
+    if (rest.indexOf("10") === 0 && rest.length === 10) d = "0" + rest;
+  }
+  return d;
+}
+
+function personHasPhoneDigits_(person, targetDigits) {
+  if (!person || !person.phoneNumbers || !targetDigits) return false;
+  var td = phoneDigits_(targetDigits);
+  for (var i = 0; i < person.phoneNumbers.length; i++) {
+    var ph = person.phoneNumbers[i] || {};
+    var v1 = phoneDigits_(ph.value || "");
+    var v2 = phoneDigits_(ph.canonicalForm || "");
+    if (v1 && v1 === td) return true;
+    if (v2 && v2 === td) return true;
+  }
+  return false;
 }
 
 function getContactBlockInfo_(sheet, blockStartRow, blockHeight, nameVal) {
@@ -88,6 +109,8 @@ function queueContactLogAppend_(pendingAppends, info, result, sourceRow, existed
     new Date()
   ]);
 }
+
+var PEOPLE_READ_MASK = "names,phoneNumbers,addresses,biographies,metadata";
 
 var CONTACTS_SERVICE_STATE_ = null;
 
@@ -128,12 +151,15 @@ function getPeopleServiceState_() {
 
 function getContactsServiceState_() {
   if (CONTACTS_SERVICE_STATE_) return CONTACTS_SERVICE_STATE_;
-  var peopleState = getPeopleServiceState_();
-  if (peopleState.ok) {
+
+  // People 객체가 보이면 우선 People 경로를 사용한다.
+  // (사전 진단 호출이 실패하더라도 실제 search/create가 동작하는 환경이 있어 선차단하지 않음)
+  if (typeof People !== "undefined" && People.People) {
     CONTACTS_SERVICE_STATE_ = { ok: true, provider: "people" };
     return CONTACTS_SERVICE_STATE_;
   }
 
+  var peopleState = getPeopleServiceState_();
   if (typeof ContactsApp === "undefined") {
     CONTACTS_SERVICE_STATE_ = { ok: false, reason: peopleState.reason || "contacts_unavailable" };
     return CONTACTS_SERVICE_STATE_;
@@ -169,7 +195,7 @@ function getContactsUnavailableMessage_(reason, actionLabel) {
     return "⚠️ People API가 프로젝트에서 비활성화되어 " + label + " 작업을 건너뜁니다. 고급 서비스/Google Cloud 콘솔에서 People API를 활성화하세요.";
   }
   if (reason === "people_unavailable" || reason === "people_error") {
-    return "⚠️ People API를 사용할 수 없어 " + label + " 작업을 건너뜁니다. 고급 서비스 활성화/재승인을 확인하세요.";
+    return "⚠️ 연락처 서비스 상태 확인이 필요하여 " + label + " 작업을 잠시 보류합니다.";
   }
   return "⚠️ ContactsApp을 사용할 수 없어 " + label + " 작업을 건너뜁니다.";
 }
@@ -214,14 +240,53 @@ function getContactsDiagnosticsSummary_() {
   return messages.join("\n");
 }
 
+function assertPeopleEnabled_() {
+  if (typeof People === "undefined" || !People.People) {
+    throw new Error("People API를 사용할 수 없습니다. Apps Script 고급 서비스에서 People API를 활성화하세요.");
+  }
+}
+
 function findPeopleContactsByPhone_(normalizedPhone) {
-  if (!normalizedPhone) return [];
-  var response = People.People.searchContacts({
-    query: normalizedPhone,
-    readMask: "names,phoneNumbers"
-  });
-  var results = (response && response.results) ? response.results : [];
-  return results.map(function (item) { return item.person; }).filter(Boolean);
+  var person = findContactPersonByPhone_(normalizedPhone);
+  return person ? [person] : [];
+}
+
+function findContactPersonByPhone_(phone) {
+  assertPeopleEnabled_();
+  var digits = phoneDigits_(phone);
+  if (!digits) return null;
+
+  function search_(query) {
+    if (!query) return [];
+    var response;
+    try {
+      response = People.People.searchContacts({
+        query: query,
+        readMask: PEOPLE_READ_MASK,
+        pageSize: 30
+      });
+    } catch (e) {
+      response = People.People.searchContacts({
+        query: query,
+        personFields: PEOPLE_READ_MASK,
+        pageSize: 30
+      });
+    }
+    var results = (response && response.results) ? response.results : [];
+    var matched = [];
+    for (var i = 0; i < results.length; i++) {
+      var person = results[i].person || results[i];
+      if (personHasPhoneDigits_(person, digits)) matched.push(person);
+    }
+    return matched;
+  }
+
+  var byDigits = search_(digits);
+  if (byDigits.length > 0) return byDigits[0];
+
+  var normalized = normalizePhone_(digits);
+  var byNormalized = search_(normalized);
+  return byNormalized.length > 0 ? byNormalized[0] : null;
 }
 
 function findContactsByPhone_(normalizedPhone) {
@@ -256,34 +321,60 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
   if (!state.ok) return { ok: false, skipped: true, reason: state.reason };
 
   var normalized = normalizePhone_(phone);
-  var found = findContactsByPhone_(normalized);
-  if (found && found.length > 0) return { ok: true, existed: true };
+  var digits = phoneDigits_(normalized);
+  if (!digits) return { ok: false, skipped: true, reason: "invalid_phone" };
 
-  var notes = "";
-  if (addressLine) notes += "주소: " + addressLine;
-  if (mapUrl) notes += (notes ? "\n" : "") + "지도: " + mapUrl;
+  var safeName = (displayName || normalized).toString().trim() || normalized;
+  var safeAddress = (addressLine || "").toString().trim();
+  var safeMapUrl = (mapUrl || "").toString().trim();
 
   try {
     if (state.provider === "people") {
+      var found = findContactPersonByPhone_(digits);
+      var updateFields = ["names", "phoneNumbers"];
+      if (safeAddress) updateFields.push("addresses");
+      if (safeMapUrl) updateFields.push("biographies");
+
+      if (found && found.resourceName) {
+        var full = People.People.get(found.resourceName, { personFields: PEOPLE_READ_MASK });
+        var patch = {
+          resourceName: full.resourceName,
+          etag: full.etag,
+          metadata: full.metadata,
+          names: [{ givenName: safeName }],
+          phoneNumbers: [{ value: normalized, type: "mobile" }]
+        };
+        if (safeAddress) patch.addresses = [{ formattedValue: safeAddress, type: "work" }];
+        if (safeMapUrl) patch.biographies = [{ value: safeMapUrl, contentType: "TEXT_PLAIN" }];
+
+        People.People.updateContact(patch, full.resourceName, {
+          updatePersonFields: updateFields.join(",")
+        });
+        return { ok: true, existed: true, updated: true };
+      }
+
       var person = {
-        names: [{ unstructuredName: displayName || normalized }],
+        names: [{ givenName: safeName }],
         phoneNumbers: [{ value: normalized, type: "mobile" }]
       };
-      if (notes) {
-        person.biographies = [{ value: notes, contentType: "TEXT_PLAIN" }];
-      }
-      if (addressLine) {
-        person.addresses = [{ value: addressLine }];
-      }
+      if (safeAddress) person.addresses = [{ formattedValue: safeAddress, type: "work" }];
+      if (safeMapUrl) person.biographies = [{ value: safeMapUrl, contentType: "TEXT_PLAIN" }];
+
       People.People.createContact(person);
-      return { ok: true, existed: false };
+      return { ok: true, existed: false, created: true };
     }
 
-    var c = ContactsApp.createContact(displayName || normalized, "", notes || "");
-    c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
+    var notes = "";
+    if (safeAddress) notes += "주소: " + safeAddress;
+    if (safeMapUrl) notes += (notes ? "\n" : "") + "지도: " + safeMapUrl;
 
+    var foundContacts = findContactsByPhone_(normalized);
+    if (foundContacts && foundContacts.length > 0) return { ok: true, existed: true };
+
+    var c = ContactsApp.createContact(safeName, "", notes || "");
+    c.addPhone(ContactsApp.Field.MOBILE_PHONE, normalized);
     try {
-      if (addressLine) c.addAddress(ContactsApp.Field.HOME_ADDRESS, addressLine);
+      if (safeAddress) c.addAddress(ContactsApp.Field.HOME_ADDRESS, safeAddress);
     } catch (_) {}
   } catch (e) {
     if (isContactsDeprecatedError_(e)) {
