@@ -317,6 +317,7 @@ function findStatusInRow_(sheet, blockStartRow) {
     "세팅완료(에비대기)",
     "대기",
     "세팅 대기",
+    "세팅대기",
     "엑셀 작업",
     "디자인 작업",
     "실측대기",
@@ -344,6 +345,7 @@ function findStatusInBlock_(sheet, blockStartRow) {
     "세팅완료(에비대기)",
     "대기",
     "세팅 대기",
+    "세팅대기",
     "엑셀 작업",
     "디자인 작업",
     "실측대기",
@@ -368,7 +370,8 @@ function isActiveStatusForDrive_(status) {
     status === "실측대기" ||
     status === "디자인 작업" ||
     status === "엑셀 작업" ||
-    status === "세팅 대기"
+    status === "세팅 대기" ||
+    status === "세팅대기"
   );
 }
 
