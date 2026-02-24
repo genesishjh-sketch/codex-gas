@@ -48,11 +48,18 @@ function runMasterSync() {
     }
   }
 
+  var renumberResult = renumberByBalanceDateCore_({ silent: true });
+  if (!renumberResult.ok) {
+    ui.alert("❌ [1단계] 잔금일 기준 번호 재정렬 실패\n" + (renumberResult.message || "알 수 없는 오류"));
+    return;
+  }
+
   var addrResult = (typeof updateAddressesBatch === "function") ? updateAddressesBatch(true) : { summary: "주소 변환 함수 없음", failedList: [] };
   var folderResult = (typeof createFoldersBatch === "function") ? createFoldersBatch(true, false) : { summary: "폴더 생성 함수 없음", successList: [], failedList: [] };
   var contactResult = (typeof syncContactsBatch === "function") ? syncContactsBatch(true) : { summary: "연락처 동기화 함수 없음" };
 
-  var finalMsg = "✅ [주소 변환]\n" + (addrResult.summary || "") + "\n";
+  var finalMsg = "✅ [잔금일 기준 번호 재정렬]\n" + (renumberResult.message || "") + "\n";
+  finalMsg += "\n✅ [주소 변환]\n" + (addrResult.summary || "") + "\n";
   if (addrResult.failedList && addrResult.failedList.length > 0) finalMsg += "❌ 실패:\n" + addrResult.failedList.join("\n") + "\n";
 
   finalMsg += "\n✅ [폴더/파일]\n" + (folderResult.summary || "") + "\n";
@@ -206,19 +213,31 @@ function runDiagnostics() {
 /** 잔금일(예정/완료) 날짜순으로 B열 번호 재정렬 */
 function renumberByBalanceDate() {
   var ui = SpreadsheetApp.getUi();
+  var result = renumberByBalanceDateCore_({ silent: false });
+  if (!result.ok) {
+    ui.alert("❌ 잔금일 기준 번호 재정렬 실패\n" + (result.message || "알 수 없는 오류"));
+  }
+}
+
+function renumberByBalanceDateCore_(options) {
+  options = options || {};
+  var silent = !!options.silent;
+  var ui = SpreadsheetApp.getUi();
   var sheet;
   try {
     sheet = getMainSheet_();
   } catch (e) {
-    ui.alert("❌ 시트 오류\n" + (e && e.message ? e.message : e));
-    return;
+    var sheetErrorMsg = "시트 오류\n" + (e && e.message ? e.message : e);
+    if (!silent) ui.alert("❌ " + sheetErrorMsg);
+    return { ok: false, message: sheetErrorMsg };
   }
 
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
   if (lastRow < CONFIG.START_ROW) {
-    ui.alert("ℹ️ 데이터가 없습니다.");
-    return;
+    var noDataMsg = "데이터가 없습니다.";
+    if (!silent) ui.alert("ℹ️ " + noDataMsg);
+    return { ok: true, message: noDataMsg, blocksCount: 0, datedBlocksCount: 0 };
   }
 
   var stopCtl = makeStopController_();
@@ -257,8 +276,9 @@ function renumberByBalanceDate() {
   }
 
   if (blocks.length === 0) {
-    ui.alert("ℹ️ 정렬할 프로젝트가 없습니다.");
-    return;
+    var noBlocksMsg = "정렬할 프로젝트가 없습니다.";
+    if (!silent) ui.alert("ℹ️ " + noBlocksMsg);
+    return { ok: true, message: noBlocksMsg, blocksCount: 0, datedBlocksCount: 0 };
   }
 
   datedBlocks.sort(function(a, b) {
@@ -286,11 +306,14 @@ function renumberByBalanceDate() {
   try {
     sortGroupsByHierarchy();
   } catch (e) {
-    ui.alert("❌ 그룹 정렬 중 오류가 발생했습니다.\n" + (e && e.message ? e.message : e));
-    return;
+    var sortErrorMsg = "그룹 정렬 중 오류가 발생했습니다.\n" + (e && e.message ? e.message : e);
+    if (!silent) ui.alert("❌ " + sortErrorMsg);
+    return { ok: false, message: sortErrorMsg };
   }
 
-  ui.alert("✅ 잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건");
+  var successMsg = "잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건";
+  if (!silent) ui.alert("✅ " + successMsg);
+  return { ok: true, message: successMsg, blocksCount: blocks.length, datedBlocksCount: datedBlocks.length };
 }
 
 /** 그룹(9행) 단위로 우선순위에 따라 정렬 */
