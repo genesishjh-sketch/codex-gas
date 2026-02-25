@@ -324,7 +324,7 @@ function collectAnchorRows_(sourceSheet) {
  * - 링크: 링크명별 URL 분리 저장
  */
 function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
-  var projectCode = readCellDisplay_(sourceSheet, anchorRow, 2);
+  var projectCode = normalizeProjectCode_(readCellDisplay_(sourceSheet, anchorRow, 2));
   var blockEndRow = nextAnchorRow ? (nextAnchorRow - 1) : Math.min(sourceSheet.getLastRow(), anchorRow + Math.max(9, getBlockHeight_(sourceSheet) + 1));
   if (!projectCode || blockEndRow < anchorRow) return null;
 
@@ -421,6 +421,15 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     sheetLink: links.sheetLink,
     milestones: milestones
   };
+}
+
+/** 프로젝트 코드 후행 노이즈 제거 (예: " /", 특수기호, 공백) */
+function normalizeProjectCode_(projectCode) {
+  var trimmed = (projectCode || '').toString().trim();
+  if (!trimmed) return '';
+
+  // 기본 코드 패턴(YYMMDD + 본문)은 유지하고, 끝의 공백/기호만 제거.
+  return trimmed.replace(/[\s\u00A0\/\\|,:;~`!@#$%^&*+=<>?"'\-]+$/g, '').trim();
 }
 
 function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow, displayBlock) {
