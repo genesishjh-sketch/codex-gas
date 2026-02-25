@@ -213,6 +213,39 @@ function runInteriorDbSyncByTrigger() {
   } catch (err) {
     console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+function runInteriorDbSyncByTrigger() {
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
+    throw err;
+  }
+}
+
+function enableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'true');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 켰습니다.');
+}
+
+function disableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'false');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 껐습니다.');
+}
+
+function runInteriorSyncOnOpenIfEnabled_() {
+  var enabled = PropertiesService.getDocumentProperties().getProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN) === 'true';
+  if (!enabled) return;
+
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('열 때 자동 동기화 실패: ' + (err && err.message ? err.message : err));
   }
 }
 
