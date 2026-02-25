@@ -430,10 +430,12 @@ function normalizeProjectCode_(projectCode) {
 
   // 기본 코드 패턴(YYMMDD + 본문)은 유지하고, 끝의 공백/기호만 제거.
   return trimmed
-    // 일반/전각 공백 제거
-    .replace(/[\s\u00A0\u3000]+$/g, '')
+    // 일반/전각/제로폭 계열 공백 제거
+    .replace(/[\s\u00A0\u2000-\u200D\u2060\uFEFF\u3000]+$/g, '')
     // 끝에 붙은 특수기호(ASCII + 전각 슬래시/역슬래시 등) 제거
     .replace(/[\/\\\|,:;~`!@#$%^&*+=<>?"'\-·•…。，、！＠＃＄％＾＆＊（）＿＋＝＜＞？／＼]+$/g, '')
+    // 혹시 남은 비정상 꼬리문자(제어문자/특수기호 등) 한 번 더 제거
+    .replace(/[^0-9A-Za-z가-힣()\[\]\s]+$/g, '')
     .trim();
 }
 
@@ -614,10 +616,13 @@ function getSheetByAliases_(ss, aliases) {
 
 /** 프로젝트 코드 형식 검사: "YYMMDD ... ...님 (지역)" */
 function isValidProjectCodeFormat_(projectCode) {
-  var trimmed = (projectCode || '').toString().trim();
-  if (!trimmed) return false;
-  var pattern = /^\d{6}(\s+.+)?$/;
-  return pattern.test(trimmed);
+  var normalized = normalizeProjectCode_(projectCode);
+  if (!normalized) return false;
+
+  // 날짜 6자리로 시작하면 유효로 판단하고, 뒤 텍스트는 유연하게 허용
+  // (예: 괄호 뒤 특수문자/공백이 있어도 정규화 후 통과)
+  var pattern = /^\d{6}(?:\s+.+)?$/;
+  return pattern.test(normalized);
 }
 
 /** 프로젝트 코드 후보 검사: 날짜 6자리로 시작하는지 */
