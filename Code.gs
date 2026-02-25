@@ -213,6 +213,8 @@ function runInteriorDbSyncByTrigger() {
   } catch (err) {
     console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
+  } finally {
+    lock.releaseLock();
   }
 }
 
