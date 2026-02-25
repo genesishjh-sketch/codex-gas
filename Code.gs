@@ -21,6 +21,7 @@ var INTERIOR_SYNC_CONFIG = {
     projects: [
       'project_code',
       'client_id',
+      'client_name',
       'project_type',
       'contract_date',
       'balance_date',
@@ -148,6 +149,7 @@ function runInteriorDbSync() {
       projectsRows.push([
         record.projectCode,
         record.clientId,
+        record.clientName,
         record.projectType,
         record.contractDate,
         record.balanceDate,
@@ -366,12 +368,16 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   }
 
   var baseRow = Math.min(anchorRow + 1, blockEndRow);
+  var profileRow = Math.max(1, anchorRow - 6);
 
-  var clientName = getDisplay(baseRow, 4);
-  var phone = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처', '휴대폰', '핸드폰', '전화번호', '연락처(핸드폰)', '연락처(휴대폰)']);
+  // 통합관리시트 레이아웃 기준: Anchor(B열 프로젝트 코드) 기준 고객정보는 상단 고정 영역(D/C열)에 위치.
+  // 예) Anchor=11행일 때 고객명=5행 D열, 연락처=6행 D열
+  var clientName = readCellDisplay_(sourceSheet, profileRow, 4) || getDisplay(baseRow, 4);
+  var phone = readCellDisplay_(sourceSheet, profileRow + 1, 4)
+    || findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처', '휴대폰', '핸드폰', '전화번호', '연락처(핸드폰)', '연락처(휴대폰)']);
   var clientId = makeClientId_(clientName, phone, projectCode);
 
-  var projectType = getDisplay(baseRow, 3);
+  var projectType = readCellDisplay_(sourceSheet, profileRow, 3) || getDisplay(baseRow, 3);
   var contractDate = toYmd_(findRawByLabel(baseRow, blockEndRow, 3, 4, ['계약일', '계약']));
   var balanceDate = toYmd_(findRawByLabel(baseRow, blockEndRow, 3, 4, ['잔금', '잔금일']));
 
@@ -389,6 +395,10 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     var stepName = getDisplay(r1, 7);
     var planDate1 = toYmd_(getValue(r1, 8));
     var doneDate = toYmd_(getValue(r1, 9));
+
+    if (stepName === '완료') {
+      continue;
+    }
 
     if (stepName || planDate1 || doneDate) {
       milestones.push([projectCode, '홈스타일링', stepName, planDate1, doneDate, '']);
