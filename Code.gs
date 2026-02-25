@@ -300,7 +300,47 @@ function ensureHeaderRow_(sheet, headers) {
   }
 
   if (!needsWrite) return;
+
+  migrateLegacyProjectsSchemaIfNeeded_(sheet, headers, normalizedCurrent);
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+}
+
+/** projects 헤더에 client_name이 추가된 레이아웃 변경 시 기존 데이터 열을 우측으로 보정합니다. */
+function migrateLegacyProjectsSchemaIfNeeded_(sheet, headers, currentHeaders) {
+  if (!sheet || !headers || !currentHeaders) return;
+  if (headers.length < 4) return;
+
+  // 구버전: project_code, client_id, project_type ...
+  // 신버전: project_code, client_id, client_name, project_type ...
+  var isLegacyProjectsLayout = headers[0] === 'project_code'
+    && headers[1] === 'client_id'
+    && headers[2] === 'client_name'
+    && currentHeaders[0] === 'project_code'
+    && currentHeaders[1] === 'client_id'
+    && currentHeaders[2] === 'project_type';
+
+  if (!isLegacyProjectsLayout) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var oldWidth = Math.max(sheet.getLastColumn(), headers.length - 1);
+  var rowCount = lastRow - 1;
+  var oldRows = sheet.getRange(2, 1, rowCount, oldWidth).getValues();
+  var migratedRows = oldRows.map(function(row) {
+    var next = new Array(headers.length);
+    next[0] = row[0] || '';
+    next[1] = row[1] || '';
+    next[2] = '';
+
+    for (var col = 3; col < headers.length; col++) {
+      next[col] = row[col - 1] || '';
+    }
+    return next;
+  });
+
+  sheet.getRange(2, 1, rowCount, oldWidth).clearContent();
+  sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows);
 }
 
 /** B열을 순회하여 Anchor(프로젝트 코드 존재 행) 수집 */
@@ -372,9 +412,13 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
 
   // 통합관리시트 레이아웃 기준: Anchor(B열 프로젝트 코드) 기준 고객정보는 상단 고정 영역(D/C열)에 위치.
   // 예) Anchor=11행일 때 고객명=5행 D열, 연락처=6행 D열
-  var clientName = readCellDisplay_(sourceSheet, profileRow, 4) || getDisplay(baseRow, 4);
-  var phone = readCellDisplay_(sourceSheet, profileRow + 1, 4)
-    || findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처', '휴대폰', '핸드폰', '전화번호', '연락처(핸드폰)', '연락처(휴대폰)']);
+  var profileClientName = readCellDisplay_(sourceSheet, profileRow, 4);
+  var blockClientName = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['고객명', '고객', '성함', '이름']) || getDisplay(baseRow, 4);
+  var clientName = isLikelyClientName_(profileClientName) ? profileClientName : blockClientName;
+
+  var profilePhone = readCellDisplay_(sourceSheet, profileRow + 1, 4);
+  var blockPhone = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처', '휴대폰', '핸드폰', '전화번호', '연락처(핸드폰)', '연락처(휴대폰)']);
+  var phone = isLikelyPhone_(profilePhone) ? profilePhone : blockPhone;
   var clientId = makeClientId_(clientName, phone, projectCode);
 
   var projectType = readCellDisplay_(sourceSheet, profileRow, 3) || getDisplay(baseRow, 3);
@@ -689,6 +733,41 @@ function makeClientId_(name, phone, projectCode) {
 
 function normalizeClientName_(name) {
   return (name || '').toString().replace(/\s+/g, '').trim();
+}
+
+/** 프로필 영역의 이름 셀 유효성 검사 (라벨/숫자/URL 등 오염값 제외) */
+function isLikelyClientName_(value) {
+  var trimmed = (value || '').toString().trim();
+  if (!trimmed) return false;
+
+  var normalized = normalizeLinkLabel_(trimmed);
+  var disallowed = {
+    '고객명': true,
+    '고객': true,
+    '성함': true,
+    '이름': true,
+    '연락처': true,
+    '휴대폰': true,
+    '전화번호': true,
+    '프로젝트유형': true,
+    'projecttype': true,
+    'project': true
+  };
+
+  if (disallowed[normalized]) return false;
+  if (/https?:\/\//i.test(trimmed)) return false;
+  if (/\d{4,}/.test(trimmed)) return false;
+  return true;
+}
+
+/** 프로필 영역 연락처 셀 유효성 검사 */
+function isLikelyPhone_(value) {
+  var trimmed = (value || '').toString().trim();
+  if (!trimmed) return false;
+  if (/https?:\/\//i.test(trimmed)) return false;
+
+  var digits = trimmed.replace(/\D/g, '');
+  return digits.length >= 7;
 }
 
 /** 셀 표시값 읽기 (행/열 유효성 보호) */
