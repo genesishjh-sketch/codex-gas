@@ -18,10 +18,48 @@ var INTERIOR_SYNC_CONFIG = {
   TARGET_MILESTONES_ALIASES: ['milestones', 'Milestones', '마일스톤', '일정'],
   TARGET_HEADERS: {
     clients: ['client_id', 'client_name', 'phone'],
-    projects: ['project_code', 'client_id', 'project_type', 'contract_date', 'balance_date', 'address', 'memo', 'links'],
+    projects: [
+      'project_code',
+      'client_id',
+      'project_type',
+      'contract_date',
+      'balance_date',
+      'address',
+      'memo',
+      'address_link',
+      'folder_link',
+      'before_photo_link',
+      'construction_photo_link',
+      'after_photo_link',
+      'avi_link',
+      'blog_link',
+      'viewer_link',
+      'edit_link',
+      'sheet_link'
+    ],
     milestones: ['project_code', 'section', 'step_name', 'plan_date', 'done_date', 'manager']
   }
 };
+
+var INTERIOR_SYNC_KEYS = {
+  AUTO_SYNC_ON_OPEN: 'INTERIOR_SYNC_ON_OPEN'
+};
+
+var INTERIOR_SYNC_TRIGGER_HANDLER = 'runInteriorDbSyncByTrigger';
+
+/** UI 사용 가능 여부 확인 (트리거 실행 대비) */
+function getUiIfAvailable_() {
+  try {
+    return SpreadsheetApp.getUi();
+  } catch (e) {
+    return null;
+  }
+}
+
+function alertIfPossible_(ui, message) {
+  if (!ui || !message) return;
+  ui.alert(message);
+}
 
 /**
  * (호환용) 별도 메뉴가 필요한 환경에서 사용할 수 있는 메뉴 생성 함수
@@ -31,6 +69,12 @@ function addInteriorSyncMenu_() {
   SpreadsheetApp.getUi()
     .createMenu('🛋️ 인테리어 관리')
     .addItem('DB 동기화 실행', 'runInteriorDbSync')
+    .addSeparator()
+    .addItem('열 때 자동 동기화 켜기', 'enableInteriorSyncOnOpen')
+    .addItem('열 때 자동 동기화 끄기', 'disableInteriorSyncOnOpen')
+    .addSeparator()
+    .addItem('매일 오전 6시 자동 동기화 설치', 'installDailyInteriorSyncTrigger6am')
+    .addItem('매일 자동 동기화 제거', 'removeDailyInteriorSyncTriggers')
     .addToUi();
 }
 
@@ -41,7 +85,14 @@ function addInteriorSyncMenu_() {
  */
 function runInteriorDbSync() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ui = SpreadsheetApp.getUi();
+  var ui = getUiIfAvailable_();
+  var lock = LockService.getDocumentLock();
+
+  if (!lock.tryLock(30000)) {
+    ss.toast('이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.', '🛋️ 인테리어 관리', 5);
+    alertIfPossible_(ui, '이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.');
+    return;
+  }
 
   try {
     var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
@@ -102,7 +153,16 @@ function runInteriorDbSync() {
         record.balanceDate,
         record.address,
         record.memo,
-        record.links
+        record.addressLink,
+        record.folderLink,
+        record.beforePhotoLink,
+        record.constructionPhotoLink,
+        record.afterPhotoLink,
+        record.aviLink,
+        record.blogLink,
+        record.viewerLink,
+        record.editLink,
+        record.sheetLink
       ]);
 
       projectCodesToRefresh[record.projectCode] = true;
@@ -114,7 +174,8 @@ function runInteriorDbSync() {
         return '행 ' + record.row + ': ' + record.projectCode + ' / ' + record.clientId;
       }).join('\n');
 
-      ui.alert(
+      alertIfPossible_(
+        ui,
         '프로젝트 코드 또는 고객 ID 형식이 올바르지 않아 동기화를 중단했습니다.\n'
         + '예시) 250831 멱살반 양수정님 (성산동) / 양수정7864\n'
         + invalidDetails
@@ -134,11 +195,64 @@ function runInteriorDbSync() {
       + '- milestones: ' + milestonesRows.length + '건 반영';
 
     ss.toast('동기화가 완료되었습니다.', '🛋️ 인테리어 관리', 5);
-    ui.alert(doneMessage);
+    alertIfPossible_(ui, doneMessage);
   } catch (err) {
-    ui.alert('동기화 중 오류가 발생했습니다.\n' + err.message);
+    alertIfPossible_(ui, '동기화 중 오류가 발생했습니다.\n' + err.message);
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+function runInteriorDbSyncByTrigger() {
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
   }
+}
+
+function enableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'true');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 켰습니다.');
+}
+
+function disableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'false');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 껐습니다.');
+}
+
+function runInteriorSyncOnOpenIfEnabled_() {
+  var enabled = PropertiesService.getDocumentProperties().getProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN) === 'true';
+  if (!enabled) return;
+
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('열 때 자동 동기화 실패: ' + (err && err.message ? err.message : err));
+  }
+}
+
+function installDailyInteriorSyncTrigger6am() {
+  removeDailyInteriorSyncTriggers();
+  ScriptApp.newTrigger(INTERIOR_SYNC_TRIGGER_HANDLER)
+    .timeBased()
+    .everyDays(1)
+    .atHour(6)
+    .create();
+
+  alertIfPossible_(getUiIfAvailable_(), '매일 오전 6시 자동 동기화 트리거를 설치했습니다.');
+}
+
+function removeDailyInteriorSyncTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === INTERIOR_SYNC_TRIGGER_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 }
 
 /** 대상 시트가 없으면 자동 생성하고 헤더를 준비합니다. */
@@ -194,7 +308,7 @@ function collectAnchorRows_(sourceSheet) {
  * - 잔금일: D(a-2)
  * - 주소: F(a-6) + ' ' + F(a-5)
  * - 메모: E(a-1)
- * - 링크: F(a-3), I(a-7), K(a-7) 등 결합
+ * - 링크: 링크명별 URL 분리 저장
  */
 function buildRecordFromAnchor_(sourceSheet, anchorRow) {
   var projectCode = readCellDisplay_(sourceSheet, anchorRow, 2);
@@ -212,11 +326,7 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
 
   var memo = readCellDisplay_(sourceSheet, anchorRow - 1, 5);
 
-  var links = [
-    readCellDisplay_(sourceSheet, anchorRow - 3, 6),
-    readCellDisplay_(sourceSheet, anchorRow - 7, 9),
-    readCellDisplay_(sourceSheet, anchorRow - 7, 11)
-  ].filter(function(v) { return v; }).join('\n');
+  var links = extractProjectLinks_(sourceSheet, anchorRow);
 
   var milestones = [];
 
@@ -270,9 +380,83 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
     balanceDate: balanceDate,
     address: address,
     memo: memo,
-    links: links,
+    addressLink: links.addressLink,
+    folderLink: links.folderLink,
+    beforePhotoLink: links.beforePhotoLink,
+    constructionPhotoLink: links.constructionPhotoLink,
+    afterPhotoLink: links.afterPhotoLink,
+    aviLink: links.aviLink,
+    blogLink: links.blogLink,
+    viewerLink: links.viewerLink,
+    editLink: links.editLink,
+    sheetLink: links.sheetLink,
     milestones: milestones
   };
+}
+
+function extractProjectLinks_(sourceSheet, anchorRow) {
+  var scanStartRow = Math.max(1, anchorRow - 7);
+  var scanEndRow = anchorRow;
+  var linkSpecs = [
+    { key: 'addressLink', labels: ['주소링크', '주소 링크'], useRightCell: false, fallback: { row: anchorRow - 3, col: 6 } },
+    { key: 'folderLink', labels: ['[폴더] 링크', '[폴더]링크', '[폴더]', '폴더링크', '폴더 링크'], useRightCell: false, fallback: { row: anchorRow - 7, col: 9 } },
+    { key: 'beforePhotoLink', labels: ['01 Before 사진 링크', '01 Before 사진링크', '01Before사진링크', 'before 사진 링크'], useRightCell: false },
+    { key: 'constructionPhotoLink', labels: ['02 시공 사진 링크', '02 시공 사진링크', '02시공사진링크', '시공 사진 링크'], useRightCell: false },
+    { key: 'afterPhotoLink', labels: ['03 After 사진 링크', '03 After 사진링크', '03After사진링크', 'after 사진 링크'], useRightCell: false },
+    { key: 'aviLink', labels: ['에비링크', '에비 링크'], useRightCell: false },
+    { key: 'blogLink', labels: ['블로그 링크', '블로그링크'], useRightCell: false, fallback: { row: anchorRow - 7, col: 11 } },
+    { key: 'viewerLink', labels: ['(뷰어) 링크', '(뷰어)링크', '뷰어 링크', '뷰어링크'], useRightCell: true },
+    { key: 'editLink', labels: ['(수정) 링크', '(수정)링크', '수정 링크', '수정링크'], useRightCell: true },
+    { key: 'sheetLink', labels: ['(시트) 링크', '(시트)링크', '시트 링크', '시트링크'], useRightCell: true }
+  ];
+
+  var result = {};
+  linkSpecs.forEach(function(spec) {
+    var found = findLinkByLabels_(sourceSheet, scanStartRow, scanEndRow, spec.labels, spec.useRightCell);
+    if (!found && spec.fallback) {
+      found = readCellLink_(sourceSheet, spec.fallback.row, spec.fallback.col);
+    }
+    result[spec.key] = found || '';
+  });
+
+  return result;
+}
+
+function findLinkByLabels_(sheet, startRow, endRow, labels, useRightCell) {
+  if (!labels || labels.length === 0 || startRow > endRow) return '';
+
+  var wanted = {};
+  labels.forEach(function(label) {
+    wanted[normalizeLinkLabel_(label)] = true;
+  });
+
+  var lastCol = Math.min(sheet.getLastColumn(), 220);
+  for (var row = startRow; row <= endRow; row++) {
+    var rowVals = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
+    for (var c = 0; c < rowVals.length; c++) {
+      var label = normalizeLinkLabel_(rowVals[c]);
+      if (!wanted[label]) continue;
+
+      var targetCol = useRightCell ? (c + 2) : (c + 1);
+      var url = readCellLink_(sheet, row, targetCol);
+      if (url) return url;
+    }
+  }
+
+  return '';
+}
+
+function normalizeLinkLabel_(value) {
+  return (value || '').toString().replace(/\s+/g, '').toLowerCase();
+}
+
+function readCellLink_(sheet, row, col) {
+  if (row < 1 || col < 1) return '';
+  var cell = sheet.getRange(row, col);
+  var url = getUrlFromCell_(cell);
+  if (url) return url;
+  var display = (cell.getDisplayValue() || '').toString().trim();
+  return (display.indexOf('http') === 0) ? display : '';
 }
 
 /** clients/projects 공통 UPSERT (헤더 제외, 2행부터 반영) */
