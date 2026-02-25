@@ -129,6 +129,7 @@ function runInteriorDbSync() {
     var projectsRows = [];
     var milestonesRows = [];
     var projectCodesToRefresh = {};
+    var projectCodeLegacyMap = {};
     var invalidRecords = [];
 
     anchors.forEach(function(anchorRow, idx) {
@@ -166,6 +167,11 @@ function runInteriorDbSync() {
       ]);
 
       projectCodesToRefresh[record.projectCode] = true;
+      if (record.legacyProjectCode) {
+        projectCodesToRefresh[record.legacyProjectCode] = true;
+        if (!projectCodeLegacyMap[record.projectCode]) projectCodeLegacyMap[record.projectCode] = [];
+        projectCodeLegacyMap[record.projectCode].push(record.legacyProjectCode);
+      }
       Array.prototype.push.apply(milestonesRows, record.milestones);
     });
 
@@ -178,7 +184,7 @@ function runInteriorDbSync() {
     }
 
     upsertByKey_(clientsSheet, clientsRows, 1);
-    upsertByKey_(projectsSheet, projectsRows, 1);
+    upsertByKey_(projectsSheet, projectsRows, 1, projectCodeLegacyMap);
 
     var targetProjectCodes = Object.keys(projectCodesToRefresh);
     replaceMilestonesByProjectCodes_(milestonesSheet, targetProjectCodes, milestonesRows);
@@ -324,7 +330,9 @@ function collectAnchorRows_(sourceSheet) {
  * - 링크: 링크명별 URL 분리 저장
  */
 function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
-  var projectCode = normalizeProjectCode_(readCellDisplay_(sourceSheet, anchorRow, 2));
+  var rawProjectCode = (readCellDisplay_(sourceSheet, anchorRow, 2) || '').toString().trim();
+  var projectCode = normalizeProjectCode_(rawProjectCode);
+  var legacyProjectCode = rawProjectCode && rawProjectCode !== projectCode ? rawProjectCode : '';
   var blockEndRow = nextAnchorRow ? (nextAnchorRow - 1) : Math.min(sourceSheet.getLastRow(), anchorRow + Math.max(9, getBlockHeight_(sourceSheet) + 1));
   if (!projectCode || blockEndRow < anchorRow) return null;
 
@@ -419,7 +427,8 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     viewerLink: links.viewerLink,
     editLink: links.editLink,
     sheetLink: links.sheetLink,
-    milestones: milestones
+    milestones: milestones,
+    legacyProjectCode: legacyProjectCode
   };
 }
 
@@ -510,7 +519,7 @@ function readCellLink_(sheet, row, col) {
 }
 
 /** clients/projects 공통 UPSERT (헤더 제외, 2행부터 반영) */
-function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
+function upsertByKey_(targetSheet, rows, keyColIndex1Based, legacyKeyMap) {
   if (!rows || rows.length === 0) return;
 
   var dataStartRow = 2;
@@ -531,8 +540,21 @@ function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
     var key = (row[keyColIndex1Based - 1] || '').toString().trim();
     if (!key) return;
 
-    if (keyToRowMap[key]) {
-      targetSheet.getRange(keyToRowMap[key], 1, 1, row.length).setValues([row]);
+    var targetRow = keyToRowMap[key];
+    if (!targetRow && legacyKeyMap && legacyKeyMap[key]) {
+      var legacyKeys = legacyKeyMap[key];
+      for (var i = 0; i < legacyKeys.length; i++) {
+        var legacyKey = (legacyKeys[i] || '').toString().trim();
+        if (legacyKey && keyToRowMap[legacyKey]) {
+          targetRow = keyToRowMap[legacyKey];
+          break;
+        }
+      }
+    }
+
+    if (targetRow) {
+      targetSheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+      keyToRowMap[key] = targetRow;
     } else {
       appendRows.push(row);
     }
