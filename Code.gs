@@ -177,16 +177,22 @@ function runInteriorDbSync() {
       return;
     }
 
-    upsertByKey_(clientsSheet, clientsRows, 1);
-    upsertByKey_(projectsSheet, projectsRows, 1);
+    var clientsResult = upsertByKey_(clientsSheet, clientsRows, 1);
+    var projectsResult = upsertByKey_(projectsSheet, projectsRows, 1);
 
     var targetProjectCodes = Object.keys(projectCodesToRefresh);
     replaceMilestonesByProjectCodes_(milestonesSheet, targetProjectCodes, milestonesRows);
 
     var doneMessage = '동기화가 완료되었습니다.\n'
-      + '- clients: ' + clientsRows.length + '건 반영\n'
-      + '- projects: ' + projectsRows.length + '건 반영\n'
+      + '- clients: ' + clientsResult.applied + '건 반영 (입력 ' + clientsRows.length + '건)\n'
+      + '- projects: ' + projectsResult.applied + '건 반영 (입력 ' + projectsRows.length + '건)\n'
       + '- milestones: ' + milestonesRows.length + '건 반영';
+
+    if (clientsResult.skippedEmptyKey > 0 || projectsResult.skippedEmptyKey > 0) {
+      doneMessage += '\n\n⚠️ 키 값이 비어 제외된 행이 있습니다.'
+        + '\n- clients 제외: ' + clientsResult.skippedEmptyKey + '건'
+        + '\n- projects 제외: ' + projectsResult.skippedEmptyKey + '건';
+    }
 
     if (invalidRecords.length > 0) {
       var invalidPreview = invalidRecords.slice(0, 5).map(function(record) {
@@ -362,8 +368,8 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   var baseRow = Math.min(anchorRow + 1, blockEndRow);
 
   var clientName = getDisplay(baseRow, 4);
-  var phone = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처']);
-  var clientId = makeClientId_(clientName, phone);
+  var phone = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처', '휴대폰', '핸드폰', '전화번호', '연락처(핸드폰)', '연락처(휴대폰)']);
+  var clientId = makeClientId_(clientName, phone, projectCode);
 
   var projectType = getDisplay(baseRow, 3);
   var contractDate = toYmd_(findRawByLabel(baseRow, blockEndRow, 3, 4, ['계약일', '계약']));
@@ -518,7 +524,9 @@ function readCellLink_(sheet, row, col) {
 
 /** clients/projects 공통 UPSERT (헤더 제외, 2행부터 반영) */
 function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
-  if (!rows || rows.length === 0) return;
+  if (!rows || rows.length === 0) {
+    return { applied: 0, inserted: 0, updated: 0, skippedEmptyKey: 0 };
+  }
 
   var dataStartRow = 2;
   var lastRow = targetSheet.getLastRow();
@@ -533,13 +541,19 @@ function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
   }
 
   var appendRows = [];
+  var updatedCount = 0;
+  var skippedEmptyKeyCount = 0;
 
   rows.forEach(function(row) {
     var key = (row[keyColIndex1Based - 1] || '').toString().trim();
-    if (!key) return;
+    if (!key) {
+      skippedEmptyKeyCount++;
+      return;
+    }
 
     if (keyToRowMap[key]) {
       targetSheet.getRange(keyToRowMap[key], 1, 1, row.length).setValues([row]);
+      updatedCount++;
     } else {
       appendRows.push(row);
     }
@@ -549,6 +563,13 @@ function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
     var appendStart = targetSheet.getLastRow() + 1;
     targetSheet.getRange(appendStart, 1, appendRows.length, appendRows[0].length).setValues(appendRows);
   }
+
+  return {
+    applied: updatedCount + appendRows.length,
+    inserted: appendRows.length,
+    updated: updatedCount,
+    skippedEmptyKey: skippedEmptyKeyCount
+  };
 }
 
 /**
@@ -632,21 +653,27 @@ function isProjectCodeCandidate_(projectCode) {
   return /^\d{6}/.test(trimmed);
 }
 
-/** 고객 ID 형식 검사: "이름+4자리숫자" */
+/** 고객 ID 형식 검사: 고객명(필수) + 연락처4자리(선택) */
 function isValidClientIdFormat_(clientId) {
   var trimmed = (clientId || '').toString().trim();
   if (!trimmed) return false;
-  var pattern = /^[^\d\s]+\d{4}$/;
+  var pattern = /^[^\d\s]+(?:\d{4})?$/;
   return pattern.test(trimmed);
 }
 
-/** 고객ID 생성: 고객명 + 연락처 마지막 4자리 숫자 */
-function makeClientId_(name, phone) {
+/** 고객ID 생성: 고객명 + 연락처 마지막 4자리 숫자(없으면 고객명만 사용) */
+function makeClientId_(name, phone, projectCode) {
   var safeName = normalizeClientName_(name);
   var digits = (phone || '').toString().replace(/\D/g, '');
   var last4 = digits ? digits.slice(-4) : '';
   if (safeName && last4) return safeName + last4;
   if (safeName && digits) return safeName + digits.slice(-Math.min(4, digits.length));
+  if (safeName) return safeName;
+
+  // 이름까지 비어 있으면 최소한 프로젝트코드 기반으로 키를 만든다.
+  var normalizedCode = normalizeProjectCode_(projectCode);
+  if (normalizedCode) return normalizedCode.replace(/\s+/g, '');
+
   return '';
 }
 
