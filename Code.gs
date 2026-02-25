@@ -429,7 +429,12 @@ function normalizeProjectCode_(projectCode) {
   if (!trimmed) return '';
 
   // 기본 코드 패턴(YYMMDD + 본문)은 유지하고, 끝의 공백/기호만 제거.
-  return trimmed.replace(/[\s\u00A0\/\\|,:;~`!@#$%^&*+=<>?"'\-]+$/g, '').trim();
+  return trimmed
+    // 일반/전각 공백 제거
+    .replace(/[\s\u00A0\u3000]+$/g, '')
+    // 끝에 붙은 특수기호(ASCII + 전각 슬래시/역슬래시 등) 제거
+    .replace(/[\/\\\|,:;~`!@#$%^&*+=<>?"'\-·•…。，、！＠＃＄％＾＆＊（）＿＋＝＜＞？／＼]+$/g, '')
+    .trim();
 }
 
 function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow, displayBlock) {
