@@ -131,8 +131,9 @@ function runInteriorDbSync() {
     var projectCodesToRefresh = {};
     var invalidRecords = [];
 
-    anchors.forEach(function(anchorRow) {
-      var record = buildRecordFromAnchor_(sourceSheet, anchorRow);
+    anchors.forEach(function(anchorRow, idx) {
+      var nextAnchorRow = (idx + 1 < anchors.length) ? anchors[idx + 1] : null;
+      var record = buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow);
       if (!record.projectCode) return;
 
       if (!isValidProjectCodeFormat_(record.projectCode) || !isValidClientIdFormat_(record.clientId)) {
@@ -169,17 +170,11 @@ function runInteriorDbSync() {
       Array.prototype.push.apply(milestonesRows, record.milestones);
     });
 
-    if (invalidRecords.length > 0) {
-      var invalidDetails = invalidRecords.map(function(record) {
-        return '행 ' + record.row + ': ' + record.projectCode + ' / ' + record.clientId;
-      }).join('\n');
-
-      alertIfPossible_(
-        ui,
-        '프로젝트 코드 또는 고객 ID 형식이 올바르지 않아 동기화를 중단했습니다.\n'
-        + '예시) 250831 멱살반 양수정님 (성산동) / 양수정7864\n'
-        + invalidDetails
-      );
+    if (clientsRows.length === 0 && projectsRows.length === 0) {
+      var noDataMsg = '동기화 가능한 데이터가 없습니다.\n'
+        + '- 프로젝트 코드/고객ID를 확인해주세요.';
+      ss.toast('동기화 가능한 데이터가 없습니다.', '🛋️ 인테리어 관리', 5);
+      alertIfPossible_(ui, noDataMsg);
       return;
     }
 
@@ -193,6 +188,13 @@ function runInteriorDbSync() {
       + '- clients: ' + clientsRows.length + '건 반영\n'
       + '- projects: ' + projectsRows.length + '건 반영\n'
       + '- milestones: ' + milestonesRows.length + '건 반영';
+
+    if (invalidRecords.length > 0) {
+      var invalidPreview = invalidRecords.slice(0, 5).map(function(record) {
+        return '행 ' + record.row + ': ' + record.projectCode + ' / ' + record.clientId;
+      }).join('\n');
+      doneMessage += '\n\n⚠️ 형식 경고(' + invalidRecords.length + '건): 동기화는 진행했지만 형식을 확인해주세요.\n' + invalidPreview;
+    }
 
     ss.toast('동기화가 완료되었습니다.', '🛋️ 인테리어 관리', 5);
     alertIfPossible_(ui, doneMessage);
@@ -211,6 +213,39 @@ function runInteriorDbSyncByTrigger() {
   } catch (err) {
     console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+function runInteriorDbSyncByTrigger() {
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
+    throw err;
+  }
+}
+
+function enableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'true');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 켰습니다.');
+}
+
+function disableInteriorSyncOnOpen() {
+  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'false');
+  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 껐습니다.');
+}
+
+function runInteriorSyncOnOpenIfEnabled_() {
+  var enabled = PropertiesService.getDocumentProperties().getProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN) === 'true';
+  if (!enabled) return;
+
+  try {
+    runInteriorDbSync();
+  } catch (err) {
+    console.error('열 때 자동 동기화 실패: ' + (err && err.message ? err.message : err));
   }
 }
 
@@ -273,12 +308,19 @@ function ensureHeaderRow_(sheet, headers) {
   var maxCols = Math.max(sheet.getMaxColumns(), headers.length);
   var headerRange = sheet.getRange(1, 1, 1, maxCols);
   var firstRowValues = headerRange.getDisplayValues()[0];
-  var hasAnyValue = firstRowValues.some(function(v) {
-    return (v || '').toString().trim() !== '';
+  var normalizedCurrent = firstRowValues.map(function(v) {
+    return (v || '').toString().trim();
   });
 
-  if (hasAnyValue) return;
+  var needsWrite = false;
+  for (var i = 0; i < headers.length; i++) {
+    if (normalizedCurrent[i] !== headers[i]) {
+      needsWrite = true;
+      break;
+    }
+  }
 
+  if (!needsWrite) return;
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 }
 
@@ -310,30 +352,33 @@ function collectAnchorRows_(sourceSheet) {
  * - 메모: E(a-1)
  * - 링크: 링크명별 URL 분리 저장
  */
-function buildRecordFromAnchor_(sourceSheet, anchorRow) {
+function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   var projectCode = readCellDisplay_(sourceSheet, anchorRow, 2);
-  var clientName = readCellDisplay_(sourceSheet, anchorRow - 6, 4);
-  var phone = readCellDisplay_(sourceSheet, anchorRow - 5, 4);
+  var blockEndRow = nextAnchorRow ? (nextAnchorRow - 1) : Math.min(sourceSheet.getLastRow(), anchorRow + Math.max(9, getBlockHeight_(sourceSheet) + 1));
+
+  // 현재 레이아웃 기준: 코드행(anchor) 바로 아래가 프로젝트 기본행
+  var baseRow = Math.min(anchorRow + 1, blockEndRow);
+
+  var clientName = readCellDisplay_(sourceSheet, baseRow, 4);
+  var phone = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 3, 4, ['연락처']);
   var clientId = makeClientId_(clientName, phone);
 
-  var projectType = readCellDisplay_(sourceSheet, anchorRow - 6, 3);
-  var contractDate = toYmd_(readCellValue_(sourceSheet, anchorRow - 3, 4));
-  var balanceDate = toYmd_(readCellValue_(sourceSheet, anchorRow - 2, 4));
+  var projectType = readCellDisplay_(sourceSheet, baseRow, 3);
+  var contractDate = toYmd_(findValueByLabelRaw_(sourceSheet, baseRow, blockEndRow, 3, 4, ['계약일', '계약']));
+  var balanceDate = toYmd_(findValueByLabelRaw_(sourceSheet, baseRow, blockEndRow, 3, 4, ['잔금', '잔금일']));
 
-  var addr1 = readCellDisplay_(sourceSheet, anchorRow - 6, 6);
-  var addr2 = readCellDisplay_(sourceSheet, anchorRow - 5, 6);
+  var addr1 = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 5, 6, ['주소']);
+  var addr2 = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 5, 6, ['상세주소', '추가주소']);
   var address = [addr1, addr2].filter(function(v) { return v; }).join(' ');
 
-  var memo = readCellDisplay_(sourceSheet, anchorRow - 1, 5);
+  var memo = readCellDisplay_(sourceSheet, baseRow, 12);
 
-  var links = extractProjectLinks_(sourceSheet, anchorRow);
+  var links = extractProjectLinks_(sourceSheet, anchorRow, blockEndRow);
 
   var milestones = [];
 
-  // 섹션1) 홈스타일링 일정: G~I, (a-6) ~ (a-2)
-  for (var r1 = anchorRow - 6; r1 <= anchorRow - 2; r1++) {
-    if (r1 < 1) continue;
-
+  // 섹션1) 홈스타일링 일정: G~I
+  for (var r1 = baseRow; r1 <= blockEndRow; r1++) {
     var stepName = readCellDisplay_(sourceSheet, r1, 7);
     var planDate1 = toYmd_(readCellValue_(sourceSheet, r1, 8));
     var doneDate = toYmd_(readCellValue_(sourceSheet, r1, 9));
@@ -350,10 +395,8 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
     }
   }
 
-  // 섹션2) 시공/지원 일정: M~P, (a-6) ~ (a-1), N열(계획일) 필수
-  for (var r2 = anchorRow - 6; r2 <= anchorRow - 1; r2++) {
-    if (r2 < 1) continue;
-
+  // 섹션2) 시공/지원 일정: M~P
+  for (var r2 = baseRow; r2 <= blockEndRow; r2++) {
     var category = readCellDisplay_(sourceSheet, r2, 13);
     var planDate2 = toYmd_(readCellValue_(sourceSheet, r2, 14));
     var manager = readCellDisplay_(sourceSheet, r2, 16);
@@ -394,9 +437,9 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow) {
   };
 }
 
-function extractProjectLinks_(sourceSheet, anchorRow) {
-  var scanStartRow = Math.max(1, anchorRow - 7);
-  var scanEndRow = anchorRow;
+function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow) {
+  var scanStartRow = Math.max(1, anchorRow);
+  var scanEndRow = Math.max(scanStartRow, blockEndRow || anchorRow);
   var linkSpecs = [
     { key: 'addressLink', labels: ['주소링크', '주소 링크'], useRightCell: false, fallback: { row: anchorRow - 3, col: 6 } },
     { key: 'folderLink', labels: ['[폴더] 링크', '[폴더]링크', '[폴더]', '폴더링크', '폴더 링크'], useRightCell: false, fallback: { row: anchorRow - 7, col: 9 } },
@@ -437,9 +480,15 @@ function findLinkByLabels_(sheet, startRow, endRow, labels, useRightCell) {
       var label = normalizeLinkLabel_(rowVals[c]);
       if (!wanted[label]) continue;
 
-      var targetCol = useRightCell ? (c + 2) : (c + 1);
-      var url = readCellLink_(sheet, row, targetCol);
-      if (url) return url;
+      var baseCol = c + 1;
+      var colCandidates = useRightCell
+        ? [baseCol + 1, baseCol, baseCol - 1]
+        : [baseCol, baseCol + 1];
+
+      for (var i = 0; i < colCandidates.length; i++) {
+        var url = readCellLink_(sheet, row, colCandidates[i]);
+        if (url) return url;
+      }
     }
   }
 
@@ -599,6 +648,31 @@ function readCellValue_(sheet, row, col) {
 }
 
 /** 날짜/문자열을 YYYY-MM-DD 문자열로 통일 */
+
+function findValueByLabel_(sheet, startRow, endRow, labelCol, valueCol, labels) {
+  var raw = findValueByLabelRaw_(sheet, startRow, endRow, labelCol, valueCol, labels);
+  return (raw === null || raw === undefined) ? '' : String(raw).trim();
+}
+
+function findValueByLabelRaw_(sheet, startRow, endRow, labelCol, valueCol, labels) {
+  if (startRow < 1 || endRow < startRow) return '';
+
+  var wanted = {};
+  (labels || []).forEach(function(label) {
+    wanted[normalizeLinkLabel_(label)] = true;
+  });
+
+  var rows = endRow - startRow + 1;
+  var labelVals = sheet.getRange(startRow, labelCol, rows, 1).getDisplayValues();
+  for (var i = 0; i < labelVals.length; i++) {
+    var key = normalizeLinkLabel_(labelVals[i][0]);
+    if (!wanted[key]) continue;
+    return readCellValue_(sheet, startRow + i, valueCol);
+  }
+
+  return '';
+}
+
 function toYmd_(value) {
   if (!value) return '';
   var tz = Session.getScriptTimeZone() || 'Asia/Seoul';
