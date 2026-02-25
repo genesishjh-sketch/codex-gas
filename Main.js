@@ -15,8 +15,6 @@ function onOpen() {
     .addSeparator()
     .addItem('📅 금주 일정표 만들기', 'generateWeeklyCalendar')
     .addSeparator()
-    .addItem('🔢 잔금일 기준 번호 재정렬', 'renumberByBalanceDate')
-    .addSeparator()
     .addItem('👤 연락처 동기화', 'runContactSync')
     .addItem('🔍 연락처 로그 점검', 'runContactAudit')
     .addItem('🧭 연락처 서비스 진단', 'runContactServiceDiagnostics')
