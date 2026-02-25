@@ -218,19 +218,14 @@ function runInteriorDbSyncByTrigger() {
   }
 }
 
-
-function runInteriorDbSyncByTrigger() {
-  try {
-    runInteriorDbSync();
-  } catch (err) {
-    console.error('자동 동기화 실패: ' + (err && err.message ? err.message : err));
-    throw err;
-  }
-}
-
 function enableInteriorSyncOnOpen() {
   PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'true');
-  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 켰습니다.');
+  alertIfPossible_(
+    getUiIfAvailable_(),
+    '열 때 자동 동기화 플래그를 켰습니다.\n'
+    + '※ onOpen 30초 제한으로 실제 자동 동기화는 권장하지 않습니다.\n'
+    + '메뉴에서 매일 오전 6시 자동 동기화 설치를 사용해주세요.'
+  );
 }
 
 function disableInteriorSyncOnOpen() {
@@ -242,32 +237,9 @@ function runInteriorSyncOnOpenIfEnabled_() {
   var enabled = PropertiesService.getDocumentProperties().getProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN) === 'true';
   if (!enabled) return;
 
-  try {
-    runInteriorDbSync();
-  } catch (err) {
-    console.error('열 때 자동 동기화 실패: ' + (err && err.message ? err.message : err));
-  }
-}
-
-function enableInteriorSyncOnOpen() {
-  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'true');
-  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 켰습니다.');
-}
-
-function disableInteriorSyncOnOpen() {
-  PropertiesService.getDocumentProperties().setProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN, 'false');
-  alertIfPossible_(getUiIfAvailable_(), '열 때 자동 동기화를 껐습니다.');
-}
-
-function runInteriorSyncOnOpenIfEnabled_() {
-  var enabled = PropertiesService.getDocumentProperties().getProperty(INTERIOR_SYNC_KEYS.AUTO_SYNC_ON_OPEN) === 'true';
-  if (!enabled) return;
-
-  try {
-    runInteriorDbSync();
-  } catch (err) {
-    console.error('열 때 자동 동기화 실패: ' + (err && err.message ? err.message : err));
-  }
+  // 단순 onOpen 트리거는 30초 제한이라 전체 DB 동기화 실행 시 타임아웃 위험이 큼.
+  // 실제 자동 동기화는 시간 기반 트리거 사용을 권장합니다.
+  console.log('열 때 자동 동기화는 비활성 경로입니다. 시간 기반 트리거를 사용하세요.');
 }
 
 function installDailyInteriorSyncTrigger6am() {
@@ -355,61 +327,76 @@ function collectAnchorRows_(sourceSheet) {
 function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   var projectCode = readCellDisplay_(sourceSheet, anchorRow, 2);
   var blockEndRow = nextAnchorRow ? (nextAnchorRow - 1) : Math.min(sourceSheet.getLastRow(), anchorRow + Math.max(9, getBlockHeight_(sourceSheet) + 1));
+  if (!projectCode || blockEndRow < anchorRow) return null;
 
-  // 현재 레이아웃 기준: 코드행(anchor) 바로 아래가 프로젝트 기본행
+  var blockRows = blockEndRow - anchorRow + 1;
+  var maxCols = Math.min(sourceSheet.getLastColumn(), 220);
+  var displayBlock = sourceSheet.getRange(anchorRow, 1, blockRows, maxCols).getDisplayValues();
+  var valueBlock = sourceSheet.getRange(anchorRow, 1, blockRows, maxCols).getValues();
+
+  function toIdxRow(absRow) { return absRow - anchorRow; }
+  function getDisplay(absRow, col) {
+    var r = toIdxRow(absRow), c = col - 1;
+    if (r < 0 || r >= displayBlock.length || c < 0 || c >= maxCols) return '';
+    return (displayBlock[r][c] || '').toString().trim();
+  }
+  function getValue(absRow, col) {
+    var r = toIdxRow(absRow), c = col - 1;
+    if (r < 0 || r >= valueBlock.length || c < 0 || c >= maxCols) return '';
+    return valueBlock[r][c];
+  }
+  function findRawByLabel(startRow, endRow, labelCol, valueCol, labels) {
+    var wanted = {};
+    (labels || []).forEach(function(label) { wanted[normalizeLinkLabel_(label)] = true; });
+    for (var rr = startRow; rr <= endRow; rr++) {
+      var key = normalizeLinkLabel_(getDisplay(rr, labelCol));
+      if (!wanted[key]) continue;
+      return getValue(rr, valueCol);
+    }
+    return '';
+  }
+  function findDisplayByLabel(startRow, endRow, labelCol, valueCol, labels) {
+    var raw = findRawByLabel(startRow, endRow, labelCol, valueCol, labels);
+    return (raw === null || raw === undefined) ? '' : String(raw).trim();
+  }
+
   var baseRow = Math.min(anchorRow + 1, blockEndRow);
 
-  var clientName = readCellDisplay_(sourceSheet, baseRow, 4);
-  var phone = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 3, 4, ['연락처']);
+  var clientName = getDisplay(baseRow, 4);
+  var phone = findDisplayByLabel(baseRow, blockEndRow, 3, 4, ['연락처']);
   var clientId = makeClientId_(clientName, phone);
 
-  var projectType = readCellDisplay_(sourceSheet, baseRow, 3);
-  var contractDate = toYmd_(findValueByLabelRaw_(sourceSheet, baseRow, blockEndRow, 3, 4, ['계약일', '계약']));
-  var balanceDate = toYmd_(findValueByLabelRaw_(sourceSheet, baseRow, blockEndRow, 3, 4, ['잔금', '잔금일']));
+  var projectType = getDisplay(baseRow, 3);
+  var contractDate = toYmd_(findRawByLabel(baseRow, blockEndRow, 3, 4, ['계약일', '계약']));
+  var balanceDate = toYmd_(findRawByLabel(baseRow, blockEndRow, 3, 4, ['잔금', '잔금일']));
 
-  var addr1 = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 5, 6, ['주소']);
-  var addr2 = findValueByLabel_(sourceSheet, baseRow, blockEndRow, 5, 6, ['상세주소', '추가주소']);
+  var addr1 = findDisplayByLabel(baseRow, blockEndRow, 5, 6, ['주소']);
+  var addr2 = findDisplayByLabel(baseRow, blockEndRow, 5, 6, ['상세주소', '추가주소']);
   var address = [addr1, addr2].filter(function(v) { return v; }).join(' ');
 
-  var memo = readCellDisplay_(sourceSheet, baseRow, 12);
+  var memo = getDisplay(baseRow, 12);
 
-  var links = extractProjectLinks_(sourceSheet, anchorRow, blockEndRow);
+  var links = extractProjectLinks_(sourceSheet, anchorRow, blockEndRow, displayBlock);
 
   var milestones = [];
 
-  // 섹션1) 홈스타일링 일정: G~I
   for (var r1 = baseRow; r1 <= blockEndRow; r1++) {
-    var stepName = readCellDisplay_(sourceSheet, r1, 7);
-    var planDate1 = toYmd_(readCellValue_(sourceSheet, r1, 8));
-    var doneDate = toYmd_(readCellValue_(sourceSheet, r1, 9));
+    var stepName = getDisplay(r1, 7);
+    var planDate1 = toYmd_(getValue(r1, 8));
+    var doneDate = toYmd_(getValue(r1, 9));
 
     if (stepName || planDate1 || doneDate) {
-      milestones.push([
-        projectCode,
-        '홈스타일링',
-        stepName,
-        planDate1,
-        doneDate,
-        ''
-      ]);
+      milestones.push([projectCode, '홈스타일링', stepName, planDate1, doneDate, '']);
     }
   }
 
-  // 섹션2) 시공/지원 일정: M~P
   for (var r2 = baseRow; r2 <= blockEndRow; r2++) {
-    var category = readCellDisplay_(sourceSheet, r2, 13);
-    var planDate2 = toYmd_(readCellValue_(sourceSheet, r2, 14));
-    var manager = readCellDisplay_(sourceSheet, r2, 16);
+    var category = getDisplay(r2, 13);
+    var planDate2 = toYmd_(getValue(r2, 14));
+    var manager = getDisplay(r2, 16);
 
     if (planDate2) {
-      milestones.push([
-        projectCode,
-        '시공/지원',
-        category,
-        planDate2,
-        '',
-        manager
-      ]);
+      milestones.push([projectCode, '시공/지원', category, planDate2, '', manager]);
     }
   }
 
@@ -437,7 +424,7 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   };
 }
 
-function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow) {
+function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow, displayBlock) {
   var scanStartRow = Math.max(1, anchorRow);
   var scanEndRow = Math.max(scanStartRow, blockEndRow || anchorRow);
   var linkSpecs = [
@@ -455,7 +442,7 @@ function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow) {
 
   var result = {};
   linkSpecs.forEach(function(spec) {
-    var found = findLinkByLabels_(sourceSheet, scanStartRow, scanEndRow, spec.labels, spec.useRightCell);
+    var found = findLinkByLabels_(sourceSheet, scanStartRow, scanEndRow, spec.labels, spec.useRightCell, anchorRow, displayBlock);
     if (!found && spec.fallback) {
       found = readCellLink_(sourceSheet, spec.fallback.row, spec.fallback.col);
     }
@@ -465,7 +452,7 @@ function extractProjectLinks_(sourceSheet, anchorRow, blockEndRow) {
   return result;
 }
 
-function findLinkByLabels_(sheet, startRow, endRow, labels, useRightCell) {
+function findLinkByLabels_(sheet, startRow, endRow, labels, useRightCell, anchorRow, displayBlock) {
   if (!labels || labels.length === 0 || startRow > endRow) return '';
 
   var wanted = {};
@@ -475,8 +462,14 @@ function findLinkByLabels_(sheet, startRow, endRow, labels, useRightCell) {
 
   var lastCol = Math.min(sheet.getLastColumn(), 220);
   for (var row = startRow; row <= endRow; row++) {
-    var rowVals = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
-    for (var c = 0; c < rowVals.length; c++) {
+    var rowVals;
+    if (displayBlock && anchorRow && row >= anchorRow && (row - anchorRow) < displayBlock.length) {
+      rowVals = displayBlock[row - anchorRow];
+    } else {
+      rowVals = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
+    }
+
+    for (var c = 0; c < Math.min(rowVals.length, lastCol); c++) {
       var label = normalizeLinkLabel_(rowVals[c]);
       if (!wanted[label]) continue;
 
@@ -557,22 +550,24 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
     if (code) codeMap[code] = true;
   });
 
+  var keepRows = [];
   if (lastRow >= dataStartRow) {
-    var rangeRows = lastRow - 1;
-    var existing = milestonesSheet.getRange(dataStartRow, 1, rangeRows, 1).getDisplayValues();
-
-    // 행 삭제는 아래에서 위로 해야 인덱스 변동 문제를 피할 수 있습니다.
-    for (var i = existing.length - 1; i >= 0; i--) {
+    var existing = milestonesSheet.getRange(dataStartRow, 1, lastRow - 1, milestonesSheet.getLastColumn()).getValues();
+    for (var i = 0; i < existing.length; i++) {
       var code = (existing[i][0] || '').toString().trim();
-      if (codeMap[code]) {
-        milestonesSheet.deleteRow(dataStartRow + i);
-      }
+      if (!codeMap[code]) keepRows.push(existing[i]);
     }
   }
 
-  if (newRows && newRows.length > 0) {
-    var appendStart = milestonesSheet.getLastRow() + 1;
-    milestonesSheet.getRange(appendStart, 1, newRows.length, newRows[0].length).setValues(newRows);
+  var finalRows = keepRows.concat(newRows || []);
+
+  var maxCols = milestonesSheet.getLastColumn();
+  if (lastRow >= dataStartRow) {
+    milestonesSheet.getRange(dataStartRow, 1, lastRow - 1, maxCols).clearContent();
+  }
+
+  if (finalRows.length > 0) {
+    milestonesSheet.getRange(dataStartRow, 1, finalRows.length, finalRows[0].length).setValues(finalRows);
   }
 }
 

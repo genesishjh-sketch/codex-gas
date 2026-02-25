@@ -32,12 +32,8 @@ function onOpen() {
     runDriveCheckActive(true);
   } catch (e) {}
 
-  // (옵션) 열 때 인테리어 DB 자동 동기화
-  try {
-    if (typeof runInteriorSyncOnOpenIfEnabled_ === 'function') {
-      runInteriorSyncOnOpenIfEnabled_();
-    }
-  } catch (e) {}
+  // 단순 트리거(onOpen)는 30초 제한이라 무거운 DB 동기화를 실행하지 않습니다.
+  // (자동 동기화는 메뉴의 '매일 오전 6시 자동 동기화 설치' 사용 권장)
 }
 
 /** 마스터 세팅(팝업 1회) */
