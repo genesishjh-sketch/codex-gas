@@ -31,6 +31,13 @@ function onOpen() {
   try {
     runDriveCheckActive(true);
   } catch (e) {}
+
+  // (옵션) 열 때 인테리어 DB 자동 동기화
+  try {
+    if (typeof runInteriorSyncOnOpenIfEnabled_ === 'function') {
+      runInteriorSyncOnOpenIfEnabled_();
+    }
+  } catch (e) {}
 }
 
 /** 마스터 세팅(팝업 1회) */
