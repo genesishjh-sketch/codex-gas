@@ -142,7 +142,6 @@ function runInteriorDbSync() {
           projectCode: record.projectCode,
           clientId: record.clientId
         });
-        return;
       }
 
       clientsRows.push([record.clientId, record.clientName, record.phone]);
@@ -603,7 +602,7 @@ function getSheetByAliases_(ss, aliases) {
 function isValidProjectCodeFormat_(projectCode) {
   var trimmed = (projectCode || '').toString().trim();
   if (!trimmed) return false;
-  var pattern = /^\d{6}\s+.+\s+.+님\s+\(.+\)$/;
+  var pattern = /^\d{6}(\s+.+)?$/;
   return pattern.test(trimmed);
 }
 
@@ -624,10 +623,16 @@ function isValidClientIdFormat_(clientId) {
 
 /** 고객ID 생성: 고객명 + 연락처 마지막 4자리 숫자 */
 function makeClientId_(name, phone) {
-  var safeName = (name || '').toString().trim();
+  var safeName = normalizeClientName_(name);
   var digits = (phone || '').toString().replace(/\D/g, '');
   var last4 = digits ? digits.slice(-4) : '';
-  return safeName + last4;
+  if (safeName && last4) return safeName + last4;
+  if (safeName && digits) return safeName + digits.slice(-Math.min(4, digits.length));
+  return '';
+}
+
+function normalizeClientName_(name) {
+  return (name || '').toString().replace(/\s+/g, '').trim();
 }
 
 /** 셀 표시값 읽기 (행/열 유효성 보호) */
