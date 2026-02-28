@@ -321,26 +321,10 @@ function migrateLegacyProjectsSchemaIfNeeded_(sheet, headers, currentHeaders) {
 
   if (!isLegacyProjectsLayout) return;
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-
-  var oldWidth = Math.max(sheet.getLastColumn(), headers.length - 1);
-  var rowCount = lastRow - 1;
-  var oldRows = sheet.getRange(2, 1, rowCount, oldWidth).getValues();
-  var migratedRows = oldRows.map(function(row) {
-    var next = new Array(headers.length);
-    next[0] = row[0] || '';
-    next[1] = row[1] || '';
-    next[2] = '';
-
-    for (var col = 3; col < headers.length; col++) {
-      next[col] = row[col - 1] || '';
-    }
-    return next;
-  });
-
-  sheet.getRange(2, 1, rowCount, oldWidth).clearContent();
-  sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows);
+  // 스키마 중간(client_id 다음)에 신규 열을 삽입해야 하므로,
+  // 컬럼 삽입으로 우측 데이터를 그대로 보존한 채 프로젝트 스키마만 우측 이동시킵니다.
+  // (기존 clear+rewrite 방식은 스키마 우측의 사용자 컬럼을 지울 수 있음)
+  sheet.insertColumnAfter(2);
 }
 
 /** B열을 순회하여 Anchor(프로젝트 코드 존재 행) 수집 */
