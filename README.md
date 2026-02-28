@@ -8,3 +8,47 @@
 ## 머지 충돌 시 필수 확인
 - `<<<<<<<`, `=======`, `>>>>>>>` 표시가 남아 있으면 **스크립트가 실행되지 않습니다.**
 - 반드시 충돌 마커를 제거하고, `ContactManager.js`의 연락처 헬퍼/동기화/점검 함수가 **정상 형태로 유지**되는지 확인하세요.
+
+## 인테리어 DB 연동 프로그램 사용 설명서
+
+### 1) 모듈 구조(유지보수 기준)
+- `Menu.js`: 사용자 메뉴 등록
+- `SyncService.js`: DB 동기화 핵심 로직 (`runInteriorDbSync` 등)
+- `InteriorSettingsManager.js`: `마스터설정` 시트 생성/검증/설정 읽기
+- `TriggerService.js`: 자동 실행 트리거 설치/제거
+- `DashboardService.js`: 90일 KPI 집계 갱신
+- `ArchiveService.js`: 완료 후 경과 마일스톤 보관 이관
+- `AlertService.js`: 텔레그램 브리핑/지연 알림 발송
+
+### 2) 최초 설정 순서
+1. 스프레드시트 열기 → 메뉴 `🛋️ 인테리어 관리` 진입
+2. `마스터 설정 탭 만들기/갱신` 클릭
+3. 생성된 `마스터설정` 탭에 아래 입력
+   - `TODOIST_API_TOKEN`: Todoist API 토큰
+   - `TODOIST_PROJECT_ID`: 운영 프로젝트 ID
+   - `TODOIST_TEST_PROJECT_ID`: 테스트 프로젝트 ID
+   - `DAILY_SYNC_TIME_KST`: 동기화 시간(예: `08:30`, 24시간 형식)
+   - `SYNC_SCOPE_MODE`: `지연만 / 7일예정만 / 지연+7일예정 / 전체`
+   - `ARCHIVE_AFTER_DAYS`: 보관 이관 기준 일수(예: `30`)
+
+### 3) 자동 동기화 설치
+- 설정값 기준 자동 실행: `설정 기준 자동 동기화 설치`
+- 고정 오전 6시 자동 실행: `매일 오전 6시 자동 동기화 설치`
+- 자동 실행 제거: `매일 자동 동기화 제거`
+
+### 4) 수동 실행/운영 함수
+- 수동 DB 동기화: `runInteriorDbSync`
+- 90일 대시보드 갱신: `refreshInteriorDashboard90d`
+- 완료건 아카이브 이관: `archiveCompletedMilestones`
+- 텔레그램 일일 브리핑: `sendTelegramDailyBriefing`
+- 텔레그램 지연 알림: `sendTelegramDelayAlerts`
+
+### 5) 텔레그램 알림 설정
+`AlertService.js`는 Script Properties에서 아래 키를 읽습니다.
+- `INTERIOR_TELEGRAM_BOT_TOKEN`
+- `INTERIOR_TELEGRAM_CHAT_ID`
+
+### 6) 트러블슈팅
+- 메뉴가 안 보이면: 스프레드시트 새로고침 후 다시 열기
+- 동기화가 실행되지 않으면: 트리거 중복 여부 확인 후 `매일 자동 동기화 제거` → 재설치
+- 설정값 오류 시: `마스터 설정 탭 만들기/갱신`을 다시 실행해 검증 규칙 재적용
