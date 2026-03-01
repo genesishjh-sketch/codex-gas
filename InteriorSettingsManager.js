@@ -82,7 +82,7 @@ function setupInteriorMasterSettingsSheet() {
   sheet.getRange(4, 2).setDataValidation(testIdRule);
 
   var timeRule = SpreadsheetApp.newDataValidation()
-    .requireTextMatchesPattern('^([01]\\d|2[0-3]):([0-5]\\d)$')
+    .requireFormulaSatisfied('=REGEXMATCH(B5,"^([01]\\\\d|2[0-3]):([0-5]\\\\d)$")')
     .setAllowInvalid(false)
     .setHelpText('24시간 HH:mm 형식으로 입력하세요. 예: 08:30')
     .build();
