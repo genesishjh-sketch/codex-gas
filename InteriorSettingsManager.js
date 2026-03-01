@@ -69,12 +69,17 @@ function setupInteriorMasterSettingsSheet() {
   tokenCell.setDataValidation(tokenRule);
 
   var idRule = SpreadsheetApp.newDataValidation()
-    .requireTextIsNotEmpty()
+    .requireFormulaSatisfied('=LEN(B3)>0')
     .setAllowInvalid(false)
     .setHelpText('Todoist 프로젝트 ID를 입력하세요.')
     .build();
   sheet.getRange(3, 2).setDataValidation(idRule);
-  sheet.getRange(4, 2).setDataValidation(idRule);
+  var testIdRule = SpreadsheetApp.newDataValidation()
+    .requireFormulaSatisfied('=LEN(B4)>0')
+    .setAllowInvalid(false)
+    .setHelpText('Todoist 프로젝트 ID를 입력하세요.')
+    .build();
+  sheet.getRange(4, 2).setDataValidation(testIdRule);
 
   var timeRule = SpreadsheetApp.newDataValidation()
     .requireTextMatchesPattern('^([01]\\d|2[0-3]):([0-5]\\d)$')
