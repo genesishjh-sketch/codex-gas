@@ -14,7 +14,7 @@
 ### 1) 모듈 구조(유지보수 기준)
 - `Menu.js`: 사용자 메뉴 등록
 - `SyncService.js`: DB 동기화 핵심 로직 (`runInteriorDbSync` 등)
-- `InteriorSettingsManager.js`: `마스터설정` 시트 생성/검증/설정 읽기
+- `InteriorSettingsManager.js`: Script Properties 기반 설정 읽기/정규화
 - `TriggerService.js`: 자동 실행 트리거 설치/제거
 - `DashboardService.js`: 90일 KPI 집계 갱신
 - `ArchiveService.js`: 완료 후 경과 마일스톤 보관 이관
@@ -22,14 +22,11 @@
 
 ### 2) 최초 설정 순서
 1. 스프레드시트 열기 → 메뉴 `🛋️ 인테리어 관리` 진입
-2. `마스터 설정 탭 만들기/갱신` 클릭
-3. 생성된 `마스터설정` 탭에 아래 입력
-   - `TODOIST_API_TOKEN`: Todoist API 토큰
-   - `TODOIST_PROJECT_ID`: 운영 프로젝트 ID
-   - `TODOIST_TEST_PROJECT_ID`: 테스트 프로젝트 ID
+2. Apps Script → 프로젝트 설정 → Script properties에 아래 키를 등록
    - `DAILY_SYNC_TIME_KST`: 동기화 시간(예: `08:30`, 24시간 형식)
    - `SYNC_SCOPE_MODE`: `지연만 / 7일예정만 / 지연+7일예정 / 전체`
    - `ARCHIVE_AFTER_DAYS`: 보관 이관 기준 일수(예: `30`)
+3. 미등록 시 기본값(08:30, 지연+7일예정, 30일)이 사용됩니다.
 
 ### 3) 자동 동기화 설치
 - 설정값 기준 자동 실행: `설정 기준 자동 동기화 설치`
@@ -51,4 +48,4 @@
 ### 6) 트러블슈팅
 - 메뉴가 안 보이면: 스프레드시트 새로고침 후 다시 열기
 - 동기화가 실행되지 않으면: 트리거 중복 여부 확인 후 `매일 자동 동기화 제거` → 재설치
-- 설정값 오류 시: `마스터 설정 탭 만들기/갱신`을 다시 실행해 검증 규칙 재적용
+- 설정값 오류 시: Script properties 값을 다시 확인하고 저장하세요.

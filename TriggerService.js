@@ -26,7 +26,6 @@ function runInteriorSyncOnOpenIfEnabled_() {
 }
 
 function installDailyInteriorSyncTrigger6am() {
-  setupInteriorMasterSettingsSheet();
   removeDailyInteriorSyncTriggers();
   ScriptApp.newTrigger(INTERIOR_SYNC_TRIGGER_HANDLER)
     .timeBased()
@@ -38,7 +37,6 @@ function installDailyInteriorSyncTrigger6am() {
 }
 
 function installDailyInteriorSyncTriggerBySettings() {
-  setupInteriorMasterSettingsSheet();
   var settings = getInteriorMasterSettings_();
   var parsed = parseKstTime_(settings.DAILY_SYNC_TIME_KST || INTERIOR_MASTER_SETTINGS.DEFAULTS.DAILY_SYNC_TIME_KST);
 
