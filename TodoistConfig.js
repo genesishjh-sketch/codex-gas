@@ -16,6 +16,12 @@ var TODOIST_SYNC = {
     // manager 매핑이 없을 때 동작: false면 assignee 없이 생성, true면 오류 처리
     ERROR_IF_NOT_FOUND: false
   },
+
+  PROCESS_MARK: {
+    COLUMN_INDEX: 12, // L열
+    // 아래 텍스트가 포함되면 전체 재동기화에서 이미 처리된 행으로 간주하여 스킵
+    SKIP_KEYWORDS: ['체크', '동기화완료', '투두이시트완료', 'todoist완료']
+  },
   INSTALLABLE_EDIT_TRIGGER_HANDLER: 'onMilestonesEditInstallable',
   DAILY_TRIGGER_HANDLER: 'runTodoistMilestonesFullSyncByTrigger'
 };

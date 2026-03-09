@@ -40,6 +40,11 @@ function runTodoistMilestonesFullSync() {
   ensureMilestonesSyncColumns_(sheet);
   var lastRow = sheet.getLastRow();
   for (var row = 2; row <= lastRow; row++) {
+    // L열 처리 마커가 있으면 이미 점검/동기화 완료로 보고 재검사하지 않습니다.
+    if (isAlreadyProcessedRow_(sheet, row)) {
+      Logger.log('[TodoistSync] row=%s skip: already processed marker in L column', row);
+      continue;
+    }
     syncMilestoneRowByRowNumber_(sheet, row, settings);
   }
 }
@@ -93,9 +98,11 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
       result = todoistCreateTask_(payload);
       updateTaskId_(sheet, row, result.id);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.CREATED, '', '');
+      markRowProcessed_(sheet, row, 'Todoist 동기화완료');
     } else {
       todoistUpdateTask_(rowObj.todoist_task_id, payload);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, '', '');
+      markRowProcessed_(sheet, row, 'Todoist 업데이트완료');
     }
   } catch (err) {
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.ERROR, '', err.message || String(err));
@@ -111,7 +118,7 @@ function validateSyncCondition_(rowObj, settings, sectionMap) {
 }
 
 function getMilestoneRowObject_(sheet, row) {
-  var values = sheet.getRange(row, 1, 1, 10).getValues()[0];
+  var values = sheet.getRange(row, 1, 1, 12).getValues()[0];
   return {
     project_code: values[0],
     section: values[1],
@@ -122,7 +129,8 @@ function getMilestoneRowObject_(sheet, row) {
     todoist_task_id: values[6],
     sync_status: values[7],
     last_synced_at: values[8],
-    last_error: values[9]
+    last_error: values[9],
+    process_mark: values[11]
   };
 }
 
@@ -156,8 +164,9 @@ function appendLabelsIfEnabled_(payload, settings, context) {
 
 function ensureMilestonesSyncColumns_(sheet) {
   var expected = TODOIST_SYNC.MILESTONE_HEADERS.concat(TODOIST_SYNC.SYNC_HEADERS);
-  if (sheet.getMaxColumns() < expected.length) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), expected.length - sheet.getMaxColumns());
+  var requiredCols = Math.max(expected.length, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX);
+  if (sheet.getMaxColumns() < requiredCols) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredCols - sheet.getMaxColumns());
   }
 
   var current = sheet.getRange(1, 1, 1, expected.length).getDisplayValues()[0];
@@ -178,6 +187,24 @@ function setSyncResult_(sheet, row, status, reason, errorText) {
 function updateTaskId_(sheet, row, taskId) {
   if (!taskId) return;
   sheet.getRange(row, 7).setValue(String(taskId));
+}
+
+
+function isAlreadyProcessedRow_(sheet, row) {
+  var marker = sheet.getRange(row, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX).getDisplayValue();
+  if (!marker) return false;
+
+  var normalized = marker.toString().trim().toLowerCase();
+  if (!normalized) return false;
+
+  return TODOIST_SYNC.PROCESS_MARK.SKIP_KEYWORDS.some(function(keyword) {
+    return normalized.indexOf(keyword.toLowerCase()) >= 0;
+  });
+}
+
+function markRowProcessed_(sheet, row, message) {
+  var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  sheet.getRange(row, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX).setValue((message || '동기화완료') + ' | ' + timestamp);
 }
 
 function formatDateForTodoist_(value) {
