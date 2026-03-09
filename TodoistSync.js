@@ -38,14 +38,38 @@ function runTodoistMilestonesFullSync() {
   if (!sheet) throw new Error('동기화 대상 시트를 찾을 수 없습니다: ' + settings.sync_target_sheet);
 
   ensureMilestonesSyncColumns_(sheet);
+
+  var fullSyncSettings = TODOIST_SYNC.FULL_SYNC || {};
+  var maxRuntimeMs = Number(fullSyncSettings.MAX_RUNTIME_MS) || 330000;
+  var cursorPropertyKey = fullSyncSettings.CURSOR_PROPERTY_KEY || 'TODOIST_FULL_SYNC_LAST_ROW';
+  var scriptProps = PropertiesService.getScriptProperties();
+
   var lastRow = sheet.getLastRow();
-  for (var row = 2; row <= lastRow; row++) {
+  var defaultStartRow = 2;
+  var savedCursor = parseInt(scriptProps.getProperty(cursorPropertyKey) || '', 10);
+  var startRow = (savedCursor >= defaultStartRow && savedCursor <= lastRow) ? savedCursor : defaultStartRow;
+
+  var startedAt = Date.now();
+  var completed = true;
+
+  for (var row = startRow; row <= lastRow; row++) {
+    if ((Date.now() - startedAt) >= maxRuntimeMs) {
+      scriptProps.setProperty(cursorPropertyKey, String(row));
+      Logger.log('[TodoistSync] runtime guard reached at row=%s, cursor saved', row);
+      completed = false;
+      break;
+    }
+
     // L열 처리 마커가 있으면 이미 점검/동기화 완료로 보고 재검사하지 않습니다.
     if (isAlreadyProcessedRow_(sheet, row)) {
       Logger.log('[TodoistSync] row=%s skip: already processed marker in L column', row);
       continue;
     }
     syncMilestoneRowByRowNumber_(sheet, row, settings);
+  }
+
+  if (completed) {
+    scriptProps.deleteProperty(cursorPropertyKey);
   }
 }
 
