@@ -34,16 +34,24 @@ function runInteriorDbSync() {
       return;
     }
 
-    var clientsRows = [];
-    var projectsRows = [];
-    var milestonesRows = [];
-    var projectCodesToRefresh = {};
+    var recordByProjectCode = {};
 
     anchors.forEach(function(anchorRow, idx) {
       var nextAnchorRow = (idx + 1 < anchors.length) ? anchors[idx + 1] : null;
       var record = buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow);
       if (!record || !record.projectCode) return;
+      // 같은 프로젝트 코드가 통합관리시트에 중복 존재하면 마지막(아래) 블록을 우선 사용
+      // (기존엔 동일 코드의 마일스톤이 누적되어 DB에서 일정이 섞여 보일 수 있음)
+      recordByProjectCode[record.projectCode] = record;
+    });
 
+    var clientsRows = [];
+    var projectsRows = [];
+    var milestonesRows = [];
+    var projectCodesToRefresh = Object.keys(recordByProjectCode);
+
+    projectCodesToRefresh.forEach(function(projectCode) {
+      var record = recordByProjectCode[projectCode];
       clientsRows.push([record.clientId, record.clientName, record.phone]);
       projectsRows.push([
         record.projectCode,
@@ -66,13 +74,12 @@ function runInteriorDbSync() {
         record.sheetLink
       ]);
 
-      projectCodesToRefresh[record.projectCode] = true;
-      Array.prototype.push.apply(milestonesRows, record.milestones);
+      Array.prototype.push.apply(milestonesRows, record.milestones || []);
     });
 
     var clientsResult = upsertByKey_(clientsSheet, clientsRows, 1);
     var projectsResult = upsertByKey_(projectsSheet, projectsRows, 1);
-    replaceMilestonesByProjectCodes_(milestonesSheet, Object.keys(projectCodesToRefresh), milestonesRows);
+    replaceMilestonesByProjectCodes_(milestonesSheet, projectCodesToRefresh, milestonesRows);
 
     ss.toast(
       '동기화 완료 - clients:' + clientsResult.applied + ' / projects:' + projectsResult.applied + ' / milestones:' + milestonesRows.length,
