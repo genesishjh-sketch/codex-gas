@@ -105,18 +105,32 @@ function ensureHeaderRow_(sheet, headers) {
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 }
 
-/** B열을 순회하여 Anchor(프로젝트 코드 존재 행) 수집 */
+/**
+ * 블록 단위로 Anchor(프로젝트 코드 행) 수집
+ *
+ * 통합관리시트는 고정 블록(예: B4~B12, B13~B21) 구조이므로
+ * B열 전체를 훑어 "6자리 숫자"만으로 Anchor를 잡으면 블록 내부의 보조 코드까지
+ * Anchor로 오인될 수 있다.
+ *
+ * 따라서 블록 시작행 + 프로젝트코드 오프셋(기본 +7) 위치만 검사한다.
+ */
 function collectAnchorRows_(sourceSheet) {
   var lastRow = sourceSheet.getLastRow();
   if (lastRow < 1) return [];
 
-  var colBValues = sourceSheet.getRange(1, 2, lastRow, 1).getDisplayValues();
+  var blockHeight = Math.max(1, (typeof getBlockHeight_ === 'function') ? getBlockHeight_(sourceSheet) : 9);
+  var startRow = (typeof getStartRow_ === 'function') ? getStartRow_() : 4;
+  var projectCodeOffset = 7;
   var anchors = [];
 
-  for (var r = 1; r <= colBValues.length; r++) {
-    var projectCode = (colBValues[r - 1][0] || '').toString().trim();
-    if (projectCode && isProjectCodeCandidate_(projectCode)) anchors.push(r);
+  for (var blockStart = startRow; blockStart <= lastRow; blockStart += blockHeight) {
+    var anchorRow = blockStart + projectCodeOffset;
+    if (anchorRow > lastRow) break;
+
+    var projectCode = readCellDisplay_(sourceSheet, anchorRow, 2);
+    if (projectCode && isProjectCodeCandidate_(projectCode)) anchors.push(anchorRow);
   }
+
   return anchors;
 }
 
@@ -135,15 +149,22 @@ function collectAnchorRows_(sourceSheet) {
  */
 function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
   var projectCode = normalizeProjectCode_(readCellDisplay_(sourceSheet, anchorRow, 2));
-  var blockEndRow = nextAnchorRow ? (nextAnchorRow - 1) : Math.min(sourceSheet.getLastRow(), anchorRow + Math.max(9, getBlockHeight_(sourceSheet) + 1));
-  if (!projectCode || blockEndRow < anchorRow) return null;
+  var blockHeight = Math.max(1, (typeof getBlockHeight_ === 'function') ? getBlockHeight_(sourceSheet) : 9);
+  var blockStartRow = Math.max(1, anchorRow - 7);
+  var inferredBlockEndRow = blockStartRow + blockHeight - 1;
+  var blockEndRow = Math.min(sourceSheet.getLastRow(), inferredBlockEndRow);
+  if (nextAnchorRow) {
+    // 비정상 케이스 방어: 다음 Anchor가 같은 블록 안에 들어오면 직전행까지만 사용
+    blockEndRow = Math.min(blockEndRow, nextAnchorRow - 1);
+  }
+  if (!projectCode || blockEndRow < blockStartRow) return null;
 
-  var blockRows = blockEndRow - anchorRow + 1;
+  var blockRows = blockEndRow - blockStartRow + 1;
   var maxCols = Math.min(sourceSheet.getLastColumn(), 220);
-  var displayBlock = sourceSheet.getRange(anchorRow, 1, blockRows, maxCols).getDisplayValues();
-  var valueBlock = sourceSheet.getRange(anchorRow, 1, blockRows, maxCols).getValues();
+  var displayBlock = sourceSheet.getRange(blockStartRow, 1, blockRows, maxCols).getDisplayValues();
+  var valueBlock = sourceSheet.getRange(blockStartRow, 1, blockRows, maxCols).getValues();
 
-  function toIdxRow(absRow) { return absRow - anchorRow; }
+  function toIdxRow(absRow) { return absRow - blockStartRow; }
   function getDisplay(absRow, col) {
     var r = toIdxRow(absRow), c = col - 1;
     if (r < 0 || r >= displayBlock.length || c < 0 || c >= maxCols) return '';
@@ -169,7 +190,7 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     return (raw === null || raw === undefined) ? '' : String(raw).trim();
   }
 
-  var baseRow = Math.min(anchorRow + 1, blockEndRow);
+  var baseRow = blockStartRow;
   var profileRow = Math.max(1, anchorRow - 6);
 
   // 통합관리시트 레이아웃 기준: Anchor(B열 프로젝트 코드) 기준 고객정보는 상단 고정 영역(D/C열)에 위치.
