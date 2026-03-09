@@ -28,6 +28,10 @@
    - `ARCHIVE_AFTER_DAYS`: 보관 이관 기준 일수(예: `30`)
 3. 미등록 시 기본값(08:30, 지연+7일예정, 30일)이 사용됩니다.
 
+### Todoist 설정 탭 안내
+- `settings` 시트의 `todoist_api_token` 값을 우선 사용합니다.
+- `todoist_api_token`이 비어 있으면 Script Properties의 `TODOIST_API_TOKEN`을 사용합니다.
+
 ### 3) 자동 동기화 설치
 - 설정값 기준 자동 실행: `설정 기준 자동 동기화 설치`
 - 고정 오전 6시 자동 실행: `매일 오전 6시 자동 동기화 설치`

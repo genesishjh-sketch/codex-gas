@@ -8,12 +8,12 @@ function setupTodoistMilestonesSync() {
   ensureMilestonesSyncColumns_(target);
   installTodoistEditTrigger_();
 
-  var token = PropertiesService.getScriptProperties().getProperty(TODOIST_SYNC.PROPERTY_API_TOKEN);
+  var tokenInfo = getTodoistApiToken_();
   var message = [
     'Todoist 동기화 설치 완료',
     '- 대상 시트: ' + target.getName(),
     '- 실시간 트리거: 설치됨',
-    '- TODOIST_API_TOKEN: ' + (token ? '설정됨' : '미설정 (Script Properties에 추가 필요)')
+    '- API 토큰: ' + (tokenInfo.token ? '설정됨 (' + (tokenInfo.source === 'settings' ? 'settings 시트' : 'Script Properties') + ')' : '미설정 (settings 시트 todoist_api_token 또는 Script Properties TODOIST_API_TOKEN 설정 필요)')
   ].join('\n');
 
   alertIfPossible_(getUiIfAvailable_(), message);
