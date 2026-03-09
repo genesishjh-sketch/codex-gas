@@ -379,11 +379,27 @@ function isValidProjectCodeFormat_(projectCode) {
   return pattern.test(normalized);
 }
 
-/** 프로젝트 코드 후보 검사: 날짜 6자리로 시작하는지 */
+/**
+ * 프로젝트 코드 후보 검사
+ * - YYMMDD 6자리로 시작
+ * - 프로젝트명 접두어(멱살반/반멱살/스타일링대행/단기) 포함
+ * - 고객 호칭("님") 포함
+ *
+ * 기존에는 "6자리 숫자로 시작"만 체크해서
+ * 보조 메모 코드/내부 식별자(예: 2803xx ...)도 Anchor로 잘못 잡혀
+ * 인접 블록 일정이 섞이는 문제가 있었다.
+ */
 function isProjectCodeCandidate_(projectCode) {
-  var trimmed = (projectCode || '').toString().trim();
-  if (!trimmed) return false;
-  return /^\d{6}/.test(trimmed);
+  var normalized = normalizeProjectCode_(projectCode);
+  if (!normalized) return false;
+
+  var hasDatePrefix = /^\d{6}(?:\s+|$)/.test(normalized);
+  if (!hasDatePrefix) return false;
+
+  var hasProjectPrefix = /(멱살반|반멱살|스타일링대행|단기)/.test(normalized);
+  if (!hasProjectPrefix) return false;
+
+  return /님/.test(normalized);
 }
 
 /** 고객 ID 형식 검사: 고객명(필수) + 연락처4자리(선택) */
