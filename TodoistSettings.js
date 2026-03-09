@@ -4,6 +4,7 @@ function getTodoistSyncSettings_() {
   var values = sheet.getDataRange().getDisplayValues();
 
   var defaults = {
+    todoist_api_token: '',
     todoist_project_id: '',
     sync_target_sheet: TODOIST_SYNC.DEFAULT_TARGET_SHEET,
     due_date_field: 'plan_date',
@@ -32,6 +33,29 @@ function getTodoistSyncSettings_() {
   }
 
   return settings;
+}
+
+function getTodoistApiToken_() {
+  var settingsToken = (getTodoistSyncSettings_().todoist_api_token || '').toString().trim();
+  if (settingsToken) {
+    return {
+      token: settingsToken,
+      source: 'settings'
+    };
+  }
+
+  var scriptToken = (PropertiesService.getScriptProperties().getProperty(TODOIST_SYNC.PROPERTY_API_TOKEN) || '').toString().trim();
+  if (scriptToken) {
+    return {
+      token: scriptToken,
+      source: 'script_properties'
+    };
+  }
+
+  return {
+    token: '',
+    source: ''
+  };
 }
 
 function getSectionMappingMap_() {

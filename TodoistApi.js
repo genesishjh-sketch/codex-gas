@@ -9,16 +9,16 @@ function todoistUpdateTask_(taskId, payload) {
 }
 
 function todoistRequest_(path, method, payload) {
-  var token = PropertiesService.getScriptProperties().getProperty(TODOIST_SYNC.PROPERTY_API_TOKEN);
-  if (!token) {
-    throw new Error('Script Properties에 TODOIST_API_TOKEN이 없습니다.');
+  var tokenInfo = getTodoistApiToken_();
+  if (!tokenInfo.token) {
+    throw new Error('Todoist API 토큰이 없습니다. settings의 todoist_api_token 또는 Script Properties의 TODOIST_API_TOKEN을 설정하세요.');
   }
 
   var url = TODOIST_SYNC.TODOIST_API_BASE_URL + path;
   var options = {
     method: method,
     contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + token },
+    headers: { Authorization: 'Bearer ' + tokenInfo.token },
     payload: JSON.stringify(payload || {}),
     muteHttpExceptions: true
   };
