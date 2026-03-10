@@ -3,7 +3,8 @@ var TODOIST_SYNC = {
   SETTINGS_SHEET_NAME: 'settings',
   DEFAULT_TARGET_SHEET: 'milestones',
   PROPERTY_API_TOKEN: 'TODOIST_API_TOKEN',
-  TODOIST_API_BASE_URL: 'https://api.todoist.com/rest/v2',
+  // 2025-10 이후 구형 v8 엔드포인트가 완전 종료되어 /api/v1 기준으로 통일
+  TODOIST_API_BASE_URL: 'https://api.todoist.com/api/v1',
   MILESTONE_HEADERS: ['project_code', 'section', 'step_name', 'plan_date', 'done_date', 'manager'],
   SYNC_HEADERS: ['todoist_task_id', 'sync_status', 'last_synced_at', 'last_error'],
   STATUS: {
