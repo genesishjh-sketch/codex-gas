@@ -30,3 +30,100 @@ var TODOIST_SYNC = {
   INSTALLABLE_EDIT_TRIGGER_HANDLER: 'onMilestonesEditInstallable',
   DAILY_TRIGGER_HANDLER: 'runTodoistMilestonesFullSyncByTrigger'
 };
+
+var TODOIST_SETTINGS_LAYOUT = {
+  columns: ['항목코드', '값', '설명', '예시'],
+  sections: [
+    {
+      id: 'basic',
+      type: 'keyValue',
+      title: '기본 설정',
+      rows: [
+        {
+          key: 'todoist_api_token',
+          defaultValue: '',
+          description: 'Todoist API 토큰(권장: settings 시트에 입력)',
+          example: 'dummytoken1234567890'
+        },
+        {
+          key: 'todoist_project_id',
+          defaultValue: '',
+          description: 'Todoist에서 작업을 생성할 프로젝트 ID',
+          example: '1234567890'
+        },
+        {
+          key: 'sync_target_sheet',
+          defaultValue: 'milestones',
+          description: '원본 데이터가 있는 시트명',
+          example: 'milestones'
+        },
+        {
+          key: 'due_date_field',
+          defaultValue: 'plan_date',
+          description: 'Todoist due date로 사용할 필드',
+          example: 'plan_date'
+        },
+        {
+          key: 'task_title_template',
+          defaultValue: 'project_name&" | "&step_name&" 예정"',
+          description: 'Todoist 할 일 제목 템플릿',
+          example: "'TEXT(plan_date,\"mm-dd\")&\" \"&project_name&\" \"&step_name"
+        },
+        {
+          key: 'label_template',
+          defaultValue: '',
+          description: 'Todoist 라벨 템플릿. 비워두면 라벨 미사용',
+          example: 'section&"_"&step_name'
+        },
+        {
+          key: 'exclude_done',
+          defaultValue: true,
+          description: 'done_date가 있는 행은 Todoist로 보내지 않음',
+          example: 'TRUE'
+        },
+        {
+          key: 'realtime_sync',
+          defaultValue: true,
+          description: '셀 입력/수정 시 바로 Todoist로 전송',
+          example: 'TRUE'
+        },
+        {
+          key: 'use_assignee',
+          defaultValue: true,
+          description: 'manager 값 기준으로 Todoist 담당자 배정',
+          example: 'TRUE'
+        },
+        {
+          key: 'use_description',
+          defaultValue: false,
+          description: '설명(description) 사용 여부',
+          example: 'FALSE'
+        },
+        {
+          key: 'use_labels',
+          defaultValue: false,
+          description: '라벨 기능 사용 여부',
+          example: 'FALSE'
+        }
+      ]
+    },
+    {
+      id: 'sectionMapping',
+      type: 'table',
+      title: '섹션 매핑',
+      header: ['section값', 'todoist_section_id', '설명', '예시'],
+      rows: [
+        ['', '', 'B열 section 값과 Todoist 섹션 ID를 매핑', '']
+      ]
+    },
+    {
+      id: 'managerMapping',
+      type: 'table',
+      title: '담당자 매핑',
+      header: ['manager_name', 'todoist_user_email', 'todoist_user_id', 'active', '설명'],
+      rows: [
+        ['', '', '', 'TRUE', 'milestones의 manager 값과 일치 필요']
+      ]
+    }
+  ]
+};

@@ -29,10 +29,13 @@
 3. 미등록 시 기본값(08:30, 지연+7일예정, 30일)이 사용됩니다.
 
 ### Todoist 설정 탭 안내
+- `setupTodoistMilestonesSync` 실행 시 `settings` 시트 레이아웃이 자동 정렬됩니다.
+- `기본 설정` 섹션의 `todoist_api_token` 칸에 토큰을 입력하세요.
 - `settings` 시트의 `todoist_api_token` 값을 우선 사용합니다.
 - `todoist_api_token`이 비어 있으면 Script Properties의 `TODOIST_API_TOKEN`을 사용합니다.
 - 호환을 위해 `settings` 키의 대소문자 차이/숨은 문자(BOM 등)는 무시하며, `todoist_token`/`todoist_api_key`도 토큰 키로 인식합니다.
 - Script Properties는 `TODOIST_API_TOKEN`이 비어 있을 때 `TODOIST_TOKEN`도 대체 키로 인식합니다.
+- 설정 레이아웃은 섹션 단위(`keyValue`, `table`)로 관리되어 추후 섹션 추가/변경이 쉽도록 구성되어 있습니다.
 
 ### 3) 자동 동기화 설치
 - 설정값 기준 자동 실행: `설정 기준 자동 동기화 설치`
