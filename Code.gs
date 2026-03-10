@@ -218,20 +218,21 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     var stepName = getDisplay(r1, 7);
     var planDate1 = toYmd_(getValue(r1, 8));
     var doneDate = toYmd_(getValue(r1, 9));
+    var manager1 = normalizeManagerName_(getDisplay(r1, 11));
 
     if (stepName === '완료') {
       continue;
     }
 
     if (stepName || planDate1 || doneDate) {
-      milestones.push([projectCode, '홈스타일링', stepName, planDate1, doneDate, '']);
+      milestones.push([projectCode, '홈스타일링', stepName, planDate1, doneDate, manager1]);
     }
   }
 
   for (var r2 = baseRow; r2 <= blockEndRow; r2++) {
     var category = getDisplay(r2, 13);
     var planDate2 = toYmd_(getValue(r2, 14));
-    var manager = getDisplay(r2, 16);
+    var manager = normalizeManagerName_(getDisplay(r2, 16));
 
     if (planDate2) {
       milestones.push([projectCode, '시공/지원', category, planDate2, '', manager]);
@@ -260,6 +261,11 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     sheetLink: links.sheetLink,
     milestones: milestones
   };
+}
+
+function normalizeManagerName_(managerName) {
+  var normalized = (managerName || '').toString().trim();
+  return normalized || '셀모';
 }
 
 /** 프로젝트 코드 후행 노이즈 제거 (예: " /", 특수기호, 공백) */
