@@ -182,13 +182,29 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   });
 
   var finalRows = keepRows.concat(restoredRows);
+  var writeWidth = Math.max(maxCols, baseMilestoneColCount);
+
+  if (finalRows.length > 0) {
+    finalRows = normalizeRowsToWidth_(finalRows, writeWidth);
+  }
+
   if (lastRow >= dataStartRow) {
     milestonesSheet.getRange(dataStartRow, 1, lastRow - 1, maxCols).clearContent();
   }
 
   if (finalRows.length > 0) {
-    milestonesSheet.getRange(dataStartRow, 1, finalRows.length, finalRows[0].length).setValues(finalRows);
+    milestonesSheet.getRange(dataStartRow, 1, finalRows.length, writeWidth).setValues(finalRows);
   }
+}
+
+function normalizeRowsToWidth_(rows, width) {
+  return rows.map(function(row) {
+    var normalized = row ? row.slice(0, width) : [];
+    while (normalized.length < width) {
+      normalized.push('');
+    }
+    return normalized;
+  });
 }
 
 function makeMilestoneIdentityKey_(row) {
