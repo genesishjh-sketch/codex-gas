@@ -31,6 +31,8 @@
 ### Todoist 설정 탭 안내
 - `settings` 시트의 `todoist_api_token` 값을 우선 사용합니다.
 - `todoist_api_token`이 비어 있으면 Script Properties의 `TODOIST_API_TOKEN`을 사용합니다.
+- 호환을 위해 `settings` 키의 대소문자 차이/숨은 문자(BOM 등)는 무시하며, `todoist_token`/`todoist_api_key`도 토큰 키로 인식합니다.
+- Script Properties는 `TODOIST_API_TOKEN`이 비어 있을 때 `TODOIST_TOKEN`도 대체 키로 인식합니다.
 
 ### 3) 자동 동기화 설치
 - 설정값 기준 자동 실행: `설정 기준 자동 동기화 설치`
