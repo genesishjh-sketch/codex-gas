@@ -20,19 +20,45 @@ function getTodoistSyncSettings_() {
   var settings = {};
   Object.keys(defaults).forEach(function(key) { settings[key] = defaults[key]; });
 
+  var normalizedDefaults = {};
+  Object.keys(defaults).forEach(function(key) {
+    normalizedDefaults[normalizeSettingKey_(key)] = key;
+  });
+
   for (var i = 0; i < values.length; i++) {
     var key = (values[i][0] || '').toString().trim();
     var val = values[i][1];
-    if (!key || !defaults.hasOwnProperty(key)) continue;
+    if (!key) continue;
 
-    if (typeof defaults[key] === 'boolean') {
-      settings[key] = parseBoolean_(val, defaults[key]);
+    var normalizedKey = normalizeSettingKey_(key);
+    var matchedKey = normalizedDefaults[normalizedKey] || getSettingsKeyAlias_(normalizedKey);
+    if (!matchedKey || !defaults.hasOwnProperty(matchedKey)) continue;
+
+    if (typeof defaults[matchedKey] === 'boolean') {
+      settings[matchedKey] = parseBoolean_(val, defaults[matchedKey]);
     } else {
-      settings[key] = (val || '').toString().trim();
+      settings[matchedKey] = (val || '').toString().trim();
     }
   }
 
   return settings;
+}
+
+function normalizeSettingKey_(value) {
+  return (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
+}
+
+function getSettingsKeyAlias_(normalizedKey) {
+  var aliases = {
+    todoist_token: 'todoist_api_token',
+    todoistapitoken: 'todoist_api_token',
+    todoist_api_key: 'todoist_api_token'
+  };
+  return aliases[normalizedKey] || '';
 }
 
 function getTodoistApiToken_() {
@@ -44,7 +70,11 @@ function getTodoistApiToken_() {
     };
   }
 
-  var scriptToken = (PropertiesService.getScriptProperties().getProperty(TODOIST_SYNC.PROPERTY_API_TOKEN) || '').toString().trim();
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var scriptToken = (scriptProperties.getProperty(TODOIST_SYNC.PROPERTY_API_TOKEN) || '').toString().trim();
+  if (!scriptToken) {
+    scriptToken = (scriptProperties.getProperty('TODOIST_TOKEN') || '').toString().trim();
+  }
   if (scriptToken) {
     return {
       token: scriptToken,
