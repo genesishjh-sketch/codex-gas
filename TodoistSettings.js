@@ -226,6 +226,42 @@ function getManagerMappingMap_() {
   return map;
 }
 
+function getStepProjectMappingRules_() {
+  var table = readMappingBlockByHeader_(getTodoistSettingsSheet_(), ['match_type', 'pattern', 'todoist_project_id']);
+  var rules = [];
+
+  table.rows.forEach(function(row, index) {
+    var matchType = normalizeStepProjectMatchType_((row[0] || '').toString().trim());
+    var pattern = (row[1] || '').toString().trim();
+    var projectId = (row[2] || '').toString().trim();
+    var priorityRaw = parseInt((row[3] || '').toString().trim(), 10);
+    var priority = isNaN(priorityRaw) ? (1000 + index) : priorityRaw;
+    var active = parseBoolean_(row[4], true);
+
+    if (!active || !matchType || !pattern || !projectId) return;
+
+    rules.push({
+      match_type: matchType,
+      pattern: pattern,
+      todoist_project_id: projectId,
+      priority: priority
+    });
+  });
+
+  rules.sort(function(a, b) {
+    if (a.priority === b.priority) return 0;
+    return a.priority < b.priority ? -1 : 1;
+  });
+
+  return rules;
+}
+
+function normalizeStepProjectMatchType_(matchType) {
+  var normalized = (matchType || '').toString().trim().toLowerCase();
+  if (normalized === 'exact' || normalized === 'contains' || normalized === 'regex') return normalized;
+  return '';
+}
+
 function getTodoistSectionIdBySection_(sectionValue, sectionMap) {
   var key = (sectionValue || '').toString().trim();
   if (!key) return '';

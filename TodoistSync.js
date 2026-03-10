@@ -80,11 +80,14 @@ function runTodoistMilestonesFullSyncByTrigger() {
 function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   var sectionMap = getSectionMappingMap_();
   var managerMap = getManagerMappingMap_();
+  var stepProjectRules = getStepProjectMappingRules_();
   var rowObj = getMilestoneRowObject_(sheet, row);
+  var effectiveManager = resolveManagerByStepName_(rowObj.step_name, rowObj.manager);
+  var resolvedProjectId = resolveTodoistProjectIdByStepName_(rowObj.step_name, settings.todoist_project_id, stepProjectRules);
 
   Logger.log('[TodoistSync] row=%s data=%s', row, JSON.stringify(rowObj));
 
-  var validate = validateSyncCondition_(rowObj, settings, sectionMap);
+  var validate = validateSyncCondition_(rowObj, settings, sectionMap, resolvedProjectId);
   if (!validate.ok) {
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.SKIPPED, validate.reason, '');
     return;
@@ -106,13 +109,13 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   }
 
   var payload = {
-    project_id: settings.todoist_project_id,
+    project_id: resolvedProjectId,
     section_id: sectionId,
     content: taskContent
   };
 
   if (dueValue) payload.due_date = formatDateForTodoist_(dueValue);
-  appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap);
+  appendAssigneeIfEnabled_(payload, settings, effectiveManager, managerMap, resolvedProjectId);
   appendLabelsIfEnabled_(payload, settings, context);
   appendDescriptionIfEnabled_(payload, settings, context);
 
@@ -133,8 +136,8 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   }
 }
 
-function validateSyncCondition_(rowObj, settings, sectionMap) {
-  if (!settings.todoist_project_id) return { ok: false, reason: 'todoist_project_id가 비어 있음' };
+function validateSyncCondition_(rowObj, settings, sectionMap, resolvedProjectId) {
+  if (!resolvedProjectId) return { ok: false, reason: 'todoist_project_id가 비어 있음(step_name 매핑 포함)' };
   if (!rowObj.plan_date) return { ok: false, reason: 'plan_date 비어 있음' };
   if (settings.exclude_done && rowObj.done_date) return { ok: false, reason: 'done_date가 있어 제외됨' };
   if (!getTodoistSectionIdBySection_(rowObj.section, sectionMap)) return { ok: false, reason: 'section 매핑 없음' };
@@ -158,26 +161,85 @@ function getMilestoneRowObject_(sheet, row) {
   };
 }
 
-function appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap) {
+function appendAssigneeIfEnabled_(payload, settings, managerName, managerMap, projectIdForAssignee) {
   if (!settings.use_assignee) return;
-  var mapping = getTodoistAssigneeByManager_(rowObj.manager, managerMap);
+  var mapping = getTodoistAssigneeByManager_(managerName, managerMap);
 
   if (!mapping) {
     if (TODOIST_SYNC.ASSIGNEE_POLICY.ERROR_IF_NOT_FOUND) {
-      throw new Error('담당자 매핑 없음 또는 inactive: ' + rowObj.manager);
+      throw new Error('담당자 매핑 없음 또는 inactive: ' + managerName);
     }
     return;
   }
 
-  var assigneeId = resolveAssigneeIdFromMapping_(mapping, settings.todoist_project_id);
+  var assigneeProjectId = (projectIdForAssignee || settings.todoist_project_id || '').toString().trim();
+  var assigneeId = resolveAssigneeIdFromMapping_(mapping, assigneeProjectId);
   if (!assigneeId) {
     if (TODOIST_SYNC.ASSIGNEE_POLICY.ERROR_IF_NOT_FOUND) {
-      throw new Error('담당자 ID 해석 실패(manager=' + rowObj.manager + ', email=' + (mapping.todoist_user_email || '') + ')');
+      throw new Error('담당자 ID 해석 실패(manager=' + managerName + ', email=' + (mapping.todoist_user_email || '') + ')');
     }
     return;
   }
 
   payload.assignee_id = assigneeId;
+}
+
+function resolveManagerByStepName_(stepName, originalManagerName) {
+  var step = (stepName || '').toString().trim();
+  if (!step) return originalManagerName;
+
+  var policy = TODOIST_SYNC.FORCED_MANAGER_MAPPING || {};
+  var forceManager = (policy.MANAGER_NAME || '').toString().trim();
+  var stepNames = policy.STEP_NAMES || [];
+  if (!forceManager || !stepNames || !stepNames.length) return originalManagerName;
+
+  var shouldForce = stepNames.some(function(candidate) {
+    return (candidate || '').toString().trim() === step;
+  });
+
+  return shouldForce ? forceManager : originalManagerName;
+}
+
+function resolveTodoistProjectIdByStepName_(stepName, defaultProjectId, rules) {
+  var step = (stepName || '').toString().trim();
+  var matchedProjectId = '';
+
+  (rules || []).some(function(rule) {
+    if (!matchStepNameRule_(step, rule)) return false;
+    matchedProjectId = (rule.todoist_project_id || '').toString().trim();
+    return !!matchedProjectId;
+  });
+
+  if (matchedProjectId) return matchedProjectId;
+  return (defaultProjectId || '').toString().trim();
+}
+
+function matchStepNameRule_(stepName, rule) {
+  if (!rule) return false;
+
+  var step = (stepName || '').toString();
+  var pattern = (rule.pattern || '').toString();
+  if (!pattern) return false;
+
+  if (rule.match_type === 'exact') {
+    return step.trim() === pattern.trim();
+  }
+
+  if (rule.match_type === 'contains') {
+    return step.indexOf(pattern) >= 0;
+  }
+
+  if (rule.match_type === 'regex') {
+    try {
+      var re = new RegExp(pattern);
+      return re.test(step);
+    } catch (err) {
+      Logger.log('[TodoistSync] invalid step-project regex pattern: %s', pattern);
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function resolveAssigneeIdFromMapping_(mapping, projectId) {
