@@ -1,21 +1,9 @@
 /** settings 시트에서 Todoist 동기화 설정/매핑을 읽는 모듈 */
 function getTodoistSyncSettings_() {
-  var sheet = getTodoistSettingsSheet_();
+  var sheet = ensureTodoistSettingsLayout_();
   var values = sheet.getDataRange().getDisplayValues();
 
-  var defaults = {
-    todoist_api_token: '',
-    todoist_project_id: '',
-    sync_target_sheet: TODOIST_SYNC.DEFAULT_TARGET_SHEET,
-    due_date_field: 'plan_date',
-    task_title_template: 'project_name&" | "&step_name&" 예정"',
-    label_template: '',
-    exclude_done: true,
-    realtime_sync: true,
-    use_assignee: true,
-    use_description: false,
-    use_labels: false
-  };
+  var defaults = getTodoistSettingDefaults_();
 
   var settings = {};
   Object.keys(defaults).forEach(function(key) { settings[key] = defaults[key]; });
@@ -42,6 +30,123 @@ function getTodoistSyncSettings_() {
   }
 
   return settings;
+}
+
+function getTodoistSettingDefaults_() {
+  var defaults = {};
+
+  TODOIST_SETTINGS_LAYOUT.sections.forEach(function(section) {
+    if (section.type !== 'keyValue' || !section.rows) return;
+
+    section.rows.forEach(function(row) {
+      defaults[row.key] = row.defaultValue;
+    });
+  });
+
+  return defaults;
+}
+
+function ensureTodoistSettingsLayout_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(TODOIST_SYNC.SETTINGS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TODOIST_SYNC.SETTINGS_SHEET_NAME);
+  }
+
+  var values = sheet.getDataRange().getDisplayValues();
+  var existingKeyValue = {};
+
+  values.forEach(function(row) {
+    var key = normalizeSettingKey_(row[0]);
+    if (!key) return;
+    existingKeyValue[key] = row[1];
+  });
+
+  var outputRows = [];
+
+  TODOIST_SETTINGS_LAYOUT.sections.forEach(function(section, sectionIndex) {
+    if (sectionIndex > 0) outputRows.push(['', '', '', '', '']);
+    outputRows.push([section.title, '', '', '', '']);
+
+    if (section.type === 'keyValue') {
+      outputRows.push(TODOIST_SETTINGS_LAYOUT.columns);
+      section.rows.forEach(function(row) {
+        var normalizedKey = normalizeSettingKey_(row.key);
+        var existingValue = existingKeyValue[normalizedKey];
+        var value = existingValue !== undefined && existingValue !== '' ? existingValue : row.defaultValue;
+        outputRows.push([row.key, value, row.description || '', row.example || '', '']);
+      });
+      return;
+    }
+
+    if (section.type === 'table') {
+      var header = section.header || [];
+      outputRows.push(header);
+
+      var existingRows = extractMappingRowsFromValues_(values, header);
+      var rowsToWrite = existingRows.length > 0 ? existingRows : (section.rows || []);
+      rowsToWrite.forEach(function(row) {
+        outputRows.push(row);
+      });
+    }
+  });
+
+  var maxWidth = outputRows.reduce(function(max, row) {
+    return Math.max(max, row.length);
+  }, 1);
+
+  var normalizedRows = outputRows.map(function(row) {
+    var copy = row.slice();
+    while (copy.length < maxWidth) copy.push('');
+    return copy;
+  });
+
+  sheet.clear();
+  sheet.getRange(1, 1, normalizedRows.length, maxWidth).setValues(normalizedRows);
+  sheet.getRange(1, 1, normalizedRows.length, 1).setFontWeight('bold');
+  sheet.getRange(1, 1, normalizedRows.length, maxWidth).setVerticalAlignment('middle');
+  sheet.autoResizeColumns(1, maxWidth);
+
+  return sheet;
+}
+
+function extractMappingRowsFromValues_(values, header) {
+  if (!values || !values.length || !header || !header.length) return [];
+
+  var normalizedHeader = header.map(function(v) { return normalizeSettingKey_(v); });
+  var headerRowIndex = -1;
+
+  for (var i = 0; i < values.length; i++) {
+    var match = true;
+    for (var j = 0; j < normalizedHeader.length; j++) {
+      if (normalizeSettingKey_(values[i][j]) !== normalizedHeader[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  if (headerRowIndex < 0) return [];
+
+  var rows = [];
+  for (var r = headerRowIndex + 1; r < values.length; r++) {
+    var row = values[r];
+    var isEmpty = true;
+    for (var c = 0; c < normalizedHeader.length; c++) {
+      if ((row[c] || '').toString().trim() !== '') {
+        isEmpty = false;
+        break;
+      }
+    }
+    if (isEmpty) break;
+    rows.push(row.slice(0, normalizedHeader.length));
+  }
+
+  return rows;
 }
 
 function normalizeSettingKey_(value) {

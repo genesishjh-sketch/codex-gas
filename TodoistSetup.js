@@ -1,5 +1,6 @@
 /** Todoist 연동 설치/초기화 모듈 */
 function setupTodoistMilestonesSync() {
+  ensureTodoistSettingsLayout_();
   var settings = getTodoistSyncSettings_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var target = ss.getSheetByName(settings.sync_target_sheet || TODOIST_SYNC.DEFAULT_TARGET_SHEET);
