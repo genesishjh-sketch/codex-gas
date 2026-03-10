@@ -81,6 +81,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   var sectionMap = getSectionMappingMap_();
   var managerMap = getManagerMappingMap_();
   var rowObj = getMilestoneRowObject_(sheet, row);
+  var effectiveManager = resolveManagerByStepName_(rowObj.step_name, rowObj.manager);
 
   Logger.log('[TodoistSync] row=%s data=%s', row, JSON.stringify(rowObj));
 
@@ -112,7 +113,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   };
 
   if (dueValue) payload.due_date = formatDateForTodoist_(dueValue);
-  appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap);
+  appendAssigneeIfEnabled_(payload, settings, effectiveManager, managerMap);
   appendLabelsIfEnabled_(payload, settings, context);
   appendDescriptionIfEnabled_(payload, settings, context);
 
@@ -158,13 +159,13 @@ function getMilestoneRowObject_(sheet, row) {
   };
 }
 
-function appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap) {
+function appendAssigneeIfEnabled_(payload, settings, managerName, managerMap) {
   if (!settings.use_assignee) return;
-  var mapping = getTodoistAssigneeByManager_(rowObj.manager, managerMap);
+  var mapping = getTodoistAssigneeByManager_(managerName, managerMap);
 
   if (!mapping) {
     if (TODOIST_SYNC.ASSIGNEE_POLICY.ERROR_IF_NOT_FOUND) {
-      throw new Error('담당자 매핑 없음 또는 inactive: ' + rowObj.manager);
+      throw new Error('담당자 매핑 없음 또는 inactive: ' + managerName);
     }
     return;
   }
@@ -172,12 +173,28 @@ function appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap) {
   var assigneeId = resolveAssigneeIdFromMapping_(mapping, settings.todoist_project_id);
   if (!assigneeId) {
     if (TODOIST_SYNC.ASSIGNEE_POLICY.ERROR_IF_NOT_FOUND) {
-      throw new Error('담당자 ID 해석 실패(manager=' + rowObj.manager + ', email=' + (mapping.todoist_user_email || '') + ')');
+      throw new Error('담당자 ID 해석 실패(manager=' + managerName + ', email=' + (mapping.todoist_user_email || '') + ')');
     }
     return;
   }
 
   payload.assignee_id = assigneeId;
+}
+
+function resolveManagerByStepName_(stepName, originalManagerName) {
+  var step = (stepName || '').toString().trim();
+  if (!step) return originalManagerName;
+
+  var policy = TODOIST_SYNC.FORCED_MANAGER_MAPPING || {};
+  var forceManager = (policy.MANAGER_NAME || '').toString().trim();
+  var stepNames = policy.STEP_NAMES || [];
+  if (!forceManager || !stepNames || !stepNames.length) return originalManagerName;
+
+  var shouldForce = stepNames.some(function(candidate) {
+    return (candidate || '').toString().trim() === step;
+  });
+
+  return shouldForce ? forceManager : originalManagerName;
 }
 
 function resolveAssigneeIdFromMapping_(mapping, projectId) {

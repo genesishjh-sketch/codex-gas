@@ -17,6 +17,10 @@ var TODOIST_SYNC = {
     // manager 매핑이 없을 때 동작: false면 assignee 없이 생성, true면 오류 처리
     ERROR_IF_NOT_FOUND: false
   },
+  FORCED_MANAGER_MAPPING: {
+    MANAGER_NAME: '셀모',
+    STEP_NAMES: ['상담', '디자인', '구매리스트', '세팅']
+  },
 
   PROCESS_MARK: {
     COLUMN_INDEX: 12, // L열
