@@ -91,7 +91,7 @@ var TODOIST_SETTINGS_LAYOUT = {
         {
           key: 'use_assignee',
           defaultValue: true,
-          description: 'manager 값 기준으로 Todoist 담당자 배정',
+          description: 'manager 값 기준으로 Todoist 담당자 배정(우선 ID, 없으면 이메일로 협업자 조회)',
           example: 'TRUE'
         },
         {
@@ -123,7 +123,7 @@ var TODOIST_SETTINGS_LAYOUT = {
       title: '담당자 매핑',
       header: ['manager_name', 'todoist_user_email', 'todoist_user_id', 'active', '설명'],
       rows: [
-        ['', '', '', 'TRUE', 'milestones의 manager 값과 일치 필요']
+        ['', '', '', 'TRUE', 'manager_name 일치. user_id가 비어 있으면 이메일로 협업자에서 자동 매핑']
       ]
     }
   ]
