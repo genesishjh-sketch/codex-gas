@@ -1,4 +1,6 @@
 /** Todoist REST API 통신 모듈 */
+var TODOIST_PROJECT_COLLABORATORS_CACHE_ = {};
+
 function todoistCreateTask_(payload) {
   return todoistRequest_('/tasks', 'post', payload);
 }
@@ -17,11 +19,14 @@ function todoistRequest_(path, method, payload) {
   var url = TODOIST_SYNC.TODOIST_API_BASE_URL + path;
   var options = {
     method: method,
-    contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + tokenInfo.token },
-    payload: JSON.stringify(payload || {}),
     muteHttpExceptions: true
   };
+
+  if (method.toLowerCase() !== 'get') {
+    options.contentType = 'application/json';
+    options.payload = JSON.stringify(payload || {});
+  }
 
   Logger.log('[Todoist] %s %s payload=%s', method.toUpperCase(), url, JSON.stringify(payload || {}));
   var res = UrlFetchApp.fetch(url, options);
@@ -33,4 +38,47 @@ function todoistRequest_(path, method, payload) {
   }
 
   return body ? JSON.parse(body) : {};
+}
+
+function todoistFindCollaboratorIdByEmail_(projectId, email) {
+  var normalizedProjectId = (projectId || '').toString().trim();
+  var normalizedEmail = (email || '').toString().trim().toLowerCase();
+  if (!normalizedProjectId || !normalizedEmail) return '';
+
+  var collaborators = getTodoistProjectCollaborators_(normalizedProjectId);
+  for (var i = 0; i < collaborators.length; i++) {
+    var collaborator = collaborators[i] || {};
+    var collaboratorEmail = (collaborator.email || '').toString().trim().toLowerCase();
+    if (collaboratorEmail === normalizedEmail) {
+      return (collaborator.id || '').toString().trim();
+    }
+  }
+
+  return '';
+}
+
+function getTodoistProjectCollaborators_(projectId) {
+  if (TODOIST_PROJECT_COLLABORATORS_CACHE_.hasOwnProperty(projectId)) {
+    return TODOIST_PROJECT_COLLABORATORS_CACHE_[projectId];
+  }
+
+  var collaborators = [];
+  var cursor = '';
+
+  while (true) {
+    var query = '?limit=200';
+    if (cursor) {
+      query += '&cursor=' + encodeURIComponent(cursor);
+    }
+
+    var response = todoistRequest_('/projects/' + encodeURIComponent(projectId) + '/collaborators' + query, 'get');
+    var results = response.results || [];
+    collaborators = collaborators.concat(results);
+
+    cursor = response.next_cursor || '';
+    if (!cursor) break;
+  }
+
+  TODOIST_PROJECT_COLLABORATORS_CACHE_[projectId] = collaborators;
+  return collaborators;
 }

@@ -238,7 +238,6 @@ function getTodoistAssigneeByManager_(managerName, managerMap) {
 
   var mapped = managerMap[key];
   if (!mapped || !mapped.active) return null;
-  if (!mapped.todoist_user_id) return null;
   return mapped;
 }
 

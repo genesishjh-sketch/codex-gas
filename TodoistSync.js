@@ -169,7 +169,25 @@ function appendAssigneeIfEnabled_(payload, settings, rowObj, managerMap) {
     return;
   }
 
-  payload.assignee_id = mapping.todoist_user_id;
+  var assigneeId = resolveAssigneeIdFromMapping_(mapping, settings.todoist_project_id);
+  if (!assigneeId) {
+    if (TODOIST_SYNC.ASSIGNEE_POLICY.ERROR_IF_NOT_FOUND) {
+      throw new Error('담당자 ID 해석 실패(manager=' + rowObj.manager + ', email=' + (mapping.todoist_user_email || '') + ')');
+    }
+    return;
+  }
+
+  payload.assignee_id = assigneeId;
+}
+
+function resolveAssigneeIdFromMapping_(mapping, projectId) {
+  var explicitId = (mapping.todoist_user_id || '').toString().trim();
+  if (explicitId) return explicitId;
+
+  var email = (mapping.todoist_user_email || '').toString().trim();
+  if (!email) return '';
+
+  return todoistFindCollaboratorIdByEmail_(projectId, email);
 }
 
 function appendDescriptionIfEnabled_(payload, settings) {
