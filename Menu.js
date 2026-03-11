@@ -15,6 +15,8 @@ function addInteriorSyncMenu_() {
     .addSeparator()
     .addItem('설정 기준 자동 동기화 설치', 'installDailyInteriorSyncTriggerBySettings')
     .addItem('매일 오전 6시 자동 동기화 설치', 'installDailyInteriorSyncTrigger6am')
+    .addItem('실시간 동기화 설치(변경행만)', 'installRealtimeInteriorSyncTrigger')
+    .addItem('실시간 동기화 제거', 'removeRealtimeInteriorSyncTriggers')
     .addItem('매일 자동 동기화 제거', 'removeDailyInteriorSyncTriggers')
     .addToUi();
 }
