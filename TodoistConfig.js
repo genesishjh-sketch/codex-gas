@@ -53,7 +53,7 @@ var TODOIST_SETTINGS_LAYOUT = {
         {
           key: 'todoist_project_id',
           defaultValue: '',
-          description: 'Todoist에서 작업을 생성할 프로젝트 ID',
+          description: 'Todoist에서 작업을 생성할 기본(폴백) 프로젝트 ID. step_name 매핑 미일치 시 사용',
           example: '1234567890'
         },
         {
@@ -115,19 +115,22 @@ var TODOIST_SETTINGS_LAYOUT = {
     {
       id: 'stepProjectMapping',
       type: 'table',
-      title: 'step_name → 프로젝트 매핑',
+      title: 'step_name → 프로젝트 매핑(우선 적용)',
       header: ['match_type', 'pattern', 'todoist_project_id', 'priority', 'active', '설명'],
       rows: [
-        ['exact', '상담', '', '10', 'TRUE', 'match_type: exact|contains|regex, priority 숫자가 낮을수록 우선']
+        ['exact', '상담', '', '10', 'TRUE', 'match_type: exact|contains|regex, priority 숫자가 낮을수록 우선. 미일치 시 기본 todoist_project_id 사용']
       ]
     },
     {
       id: 'sectionMapping',
       type: 'table',
       title: '섹션 매핑',
-      header: ['section값', 'todoist_section_id', '설명', '예시'],
+      header: ['todoist_project_id', 'section값', 'todoist_section_id', '설명', '예시'],
+      legacyHeaders: [
+        ['section값', 'todoist_section_id', '설명', '예시']
+      ],
       rows: [
-        ['', '', 'B열 section 값과 Todoist 섹션 ID를 매핑', '']
+        ['', '', '', 'project_id를 비우면 모든 프로젝트 공통 매핑으로 사용', '']
       ]
     },
     {

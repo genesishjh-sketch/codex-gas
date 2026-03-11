@@ -84,6 +84,23 @@ function ensureTodoistSettingsLayout_() {
       outputRows.push(header);
 
       var existingRows = extractMappingRowsFromValues_(values, header);
+      if (existingRows.length === 0 && section.legacyHeaders && section.legacyHeaders.length) {
+        section.legacyHeaders.some(function(legacyHeader) {
+          var legacyRows = extractMappingRowsFromValues_(values, legacyHeader);
+          if (!legacyRows.length) return false;
+
+          if (section.id === 'sectionMapping' && header.length >= 3 && legacyHeader.length >= 2) {
+            existingRows = legacyRows.map(function(row) {
+              return ['', row[0], row[1], row[2] || '', row[3] || ''];
+            });
+            return true;
+          }
+
+          existingRows = legacyRows;
+          return true;
+        });
+      }
+
       var rowsToWrite = existingRows.length > 0 ? existingRows : (section.rows || []);
       rowsToWrite.forEach(function(row) {
         outputRows.push(row);
@@ -194,14 +211,35 @@ function getTodoistApiToken_() {
 }
 
 function getSectionMappingMap_() {
-  var table = readMappingBlockByHeader_(getTodoistSettingsSheet_(), ['section값', 'todoist_section_id']);
-  var map = {};
+  var sheet = getTodoistSettingsSheet_();
+  var table;
+  var hasProjectColumn = true;
+
+  try {
+    table = readMappingBlockByHeader_(sheet, ['todoist_project_id', 'section값', 'todoist_section_id']);
+  } catch (err) {
+    table = readMappingBlockByHeader_(sheet, ['section값', 'todoist_section_id']);
+    hasProjectColumn = false;
+  }
+
+  var map = {
+    byProject: {},
+    global: {}
+  };
 
   table.rows.forEach(function(row) {
-    var sectionName = (row[0] || '').toString().trim();
-    var todoistSectionId = (row[1] || '').toString().trim();
+    var projectId = hasProjectColumn ? (row[0] || '').toString().trim() : '';
+    var sectionName = (row[hasProjectColumn ? 1 : 0] || '').toString().trim();
+    var todoistSectionId = (row[hasProjectColumn ? 2 : 1] || '').toString().trim();
     if (!sectionName || !todoistSectionId) return;
-    map[sectionName] = todoistSectionId;
+
+    if (projectId) {
+      if (!map.byProject[projectId]) map.byProject[projectId] = {};
+      map.byProject[projectId][sectionName] = todoistSectionId;
+      return;
+    }
+
+    map.global[sectionName] = todoistSectionId;
   });
 
   return map;
@@ -262,10 +300,20 @@ function normalizeStepProjectMatchType_(matchType) {
   return '';
 }
 
-function getTodoistSectionIdBySection_(sectionValue, sectionMap) {
+function getTodoistSectionIdBySection_(sectionValue, sectionMap, projectId) {
   var key = (sectionValue || '').toString().trim();
   if (!key) return '';
-  return sectionMap[key] || '';
+
+  var pid = (projectId || '').toString().trim();
+  if (pid && sectionMap && sectionMap.byProject && sectionMap.byProject[pid] && sectionMap.byProject[pid][key]) {
+    return sectionMap.byProject[pid][key];
+  }
+
+  if (sectionMap && sectionMap.global && sectionMap.global[key]) {
+    return sectionMap.global[key];
+  }
+
+  return '';
 }
 
 function getTodoistAssigneeByManager_(managerName, managerMap) {
