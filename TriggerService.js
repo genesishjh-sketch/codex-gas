@@ -61,6 +61,25 @@ function installDailyInteriorSyncTriggerBySettings() {
   );
 }
 
+function installRealtimeInteriorSyncTrigger() {
+  removeRealtimeInteriorSyncTriggers();
+  ScriptApp.newTrigger(INTERIOR_REALTIME_SYNC_TRIGGER_HANDLER)
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onEdit()
+    .create();
+
+  alertIfPossible_(getUiIfAvailable_(), '실시간 동기화 트리거를 설치했습니다.\n(변경된 행이 속한 프로젝트만 동기화)');
+}
+
+function removeRealtimeInteriorSyncTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === INTERIOR_REALTIME_SYNC_TRIGGER_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+}
+
 function removeDailyInteriorSyncTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(function(trigger) {

@@ -47,6 +47,7 @@ var INTERIOR_SYNC_KEYS = {
 };
 
 var INTERIOR_SYNC_TRIGGER_HANDLER = 'runInteriorDbSyncByTrigger';
+var INTERIOR_REALTIME_SYNC_TRIGGER_HANDLER = 'runInteriorDbSyncRealtimeByEdit';
 
 /** UI 사용 가능 여부 확인 (트리거 실행 대비) */
 function getUiIfAvailable_() {

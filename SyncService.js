@@ -4,12 +4,46 @@
 
 function runInteriorDbSync() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var allAnchors = collectAnchorRowsForSync_(ss);
+  syncInteriorDbByAnchors_(ss, allAnchors, {
+    emptyMessage: '동기화할 프로젝트 코드가 없습니다.',
+    donePrefix: '동기화 완료',
+    toastTitle: '🛋️ 인테리어 관리',
+    notifyUiOnError: true,
+    verbose: true
+  });
+}
+
+function runInteriorDbSyncRealtimeByEdit(e) {
+  try {
+    var anchors = collectEditedAnchorRows_(e);
+    if (anchors.length === 0) return;
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    syncInteriorDbByAnchors_(ss, anchors, {
+      emptyMessage: '',
+      donePrefix: '실시간 부분 동기화 완료',
+      toastTitle: '🛋️ 인테리어 관리',
+      notifyUiOnError: false,
+      verbose: false
+    });
+  } catch (err) {
+    console.error('실시간 부분 동기화 실패: ' + (err && err.message ? err.message : err));
+    throw err;
+  }
+}
+
+function syncInteriorDbByAnchors_(ss, anchors, options) {
+  options = options || {};
   var ui = getUiIfAvailable_();
   var lock = LockService.getDocumentLock();
+  var normalizedAnchors = dedupeAnchorRows_(anchors);
 
   if (!lock.tryLock(30000)) {
-    ss.toast('이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.', '🛋️ 인테리어 관리', 5);
-    alertIfPossible_(ui, '이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.');
+    if (options.verbose !== false) {
+      ss.toast('이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.', options.toastTitle || '🛋️ 인테리어 관리', 5);
+      alertIfPossible_(ui, '이미 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.');
+    }
     return;
   }
 
@@ -28,16 +62,17 @@ function runInteriorDbSync() {
       throw new Error('필수 시트를 찾을 수 없습니다. 누락: ' + missing.join('/'));
     }
 
-    var anchors = collectAnchorRows_(sourceSheet);
-    if (anchors.length === 0) {
-      ss.toast('동기화할 프로젝트 코드가 없습니다.', '🛋️ 인테리어 관리', 5);
+    if (normalizedAnchors.length === 0) {
+      if (options.emptyMessage) {
+        ss.toast(options.emptyMessage, options.toastTitle || '🛋️ 인테리어 관리', 5);
+      }
       return;
     }
 
     var recordByProjectCode = {};
 
-    anchors.forEach(function(anchorRow, idx) {
-      var nextAnchorRow = (idx + 1 < anchors.length) ? anchors[idx + 1] : null;
+    normalizedAnchors.forEach(function(anchorRow, idx) {
+      var nextAnchorRow = (idx + 1 < normalizedAnchors.length) ? normalizedAnchors[idx + 1] : null;
       var record = buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow);
       if (!record || !record.projectCode) return;
       // 같은 프로젝트 코드가 통합관리시트에 중복 존재하면 마지막(아래) 블록을 우선 사용
@@ -81,17 +116,84 @@ function runInteriorDbSync() {
     var projectsResult = upsertByKey_(projectsSheet, projectsRows, 1);
     replaceMilestonesByProjectCodes_(milestonesSheet, projectCodesToRefresh, milestonesRows);
 
-    ss.toast(
-      '동기화 완료 - clients:' + clientsResult.applied + ' / projects:' + projectsResult.applied + ' / milestones:' + milestonesRows.length,
-      '🛋️ 인테리어 관리',
-      5
-    );
+    var donePrefix = options.donePrefix || '동기화 완료';
+    if (options.verbose !== false) {
+      ss.toast(
+        donePrefix + ' - clients:' + clientsResult.applied + ' / projects:' + projectsResult.applied + ' / milestones:' + milestonesRows.length,
+        options.toastTitle || '🛋️ 인테리어 관리',
+        5
+      );
+    }
   } catch (err) {
-    alertIfPossible_(ui, '동기화 중 오류가 발생했습니다.\n' + err.message);
+    if (options.notifyUiOnError !== false) {
+      alertIfPossible_(ui, '동기화 중 오류가 발생했습니다.\n' + err.message);
+    }
     throw err;
   } finally {
     lock.releaseLock();
   }
+}
+
+function collectAnchorRowsForSync_(ss) {
+  var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
+  if (!sourceSheet) return [];
+  return collectAnchorRows_(sourceSheet);
+}
+
+function collectEditedAnchorRows_(e) {
+  if (!e || !e.range) return [];
+
+  var range = e.range;
+  var sheet = range.getSheet();
+  if (!sheet) return [];
+
+  var sheetName = (sheet.getName() || '').toString().trim().toLowerCase();
+  var aliases = INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES || [INTERIOR_SYNC_CONFIG.SOURCE_SHEET];
+  var isSourceSheet = aliases.some(function(alias) {
+    return (alias || '').toString().trim().toLowerCase() === sheetName;
+  });
+  if (!isSourceSheet) return [];
+
+  var startRow = range.getRow();
+  var rowCount = range.getNumRows();
+  if (!rowCount) return [];
+
+  var blockStartRow = (typeof getStartRow_ === 'function') ? getStartRow_() : 4;
+  var blockHeight = Math.max(1, (typeof getBlockHeight_ === 'function') ? getBlockHeight_(sheet) : 9);
+  var projectCodeOffset = 7;
+  var lastRow = sheet.getLastRow();
+  var anchors = [];
+
+  for (var row = startRow; row < startRow + rowCount; row++) {
+    if (row < blockStartRow) continue;
+
+    var blockIndex = Math.floor((row - blockStartRow) / blockHeight);
+    var anchorRow = blockStartRow + (blockIndex * blockHeight) + projectCodeOffset;
+    if (anchorRow < 1 || anchorRow > lastRow) continue;
+
+    var projectCode = readCellDisplay_(sheet, anchorRow, 2);
+    if (!projectCode || !isProjectCodeCandidate_(projectCode)) continue;
+    anchors.push(anchorRow);
+  }
+
+  return dedupeAnchorRows_(anchors);
+}
+
+function dedupeAnchorRows_(anchors) {
+  var map = {};
+  var output = [];
+
+  (anchors || []).forEach(function(anchorRow) {
+    var numeric = Number(anchorRow);
+    if (!numeric || numeric < 1) return;
+    var normalized = Math.floor(numeric);
+    if (map[normalized]) return;
+    map[normalized] = true;
+    output.push(normalized);
+  });
+
+  output.sort(function(a, b) { return a - b; });
+  return output;
 }
 
 function upsertByKey_(targetSheet, rows, keyColIndex1Based) {
