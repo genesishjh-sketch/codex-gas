@@ -87,7 +87,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
 
   Logger.log('[TodoistSync] row=%s data=%s', row, JSON.stringify(rowObj));
 
-  var validate = validateSyncCondition_(rowObj, settings, sectionMap, resolvedProjectId);
+  var validate = validateSyncCondition_(rowObj, settings, resolvedProjectId);
   if (!validate.ok) {
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.SKIPPED, validate.reason, '');
     return;
@@ -103,16 +103,12 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   }
 
   var sectionId = getTodoistSectionIdBySection_(rowObj.section, sectionMap, resolvedProjectId);
-  if (!sectionId) {
-    setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.ERROR, '', 'section 매핑 없음: ' + rowObj.section);
-    return;
-  }
 
   var payload = {
     project_id: resolvedProjectId,
-    section_id: sectionId,
     content: taskContent
   };
+  if (sectionId) payload.section_id = sectionId;
 
   if (dueValue) payload.due_date = formatDateForTodoist_(dueValue);
   appendAssigneeIfEnabled_(payload, settings, effectiveManager, managerMap, resolvedProjectId);
@@ -136,11 +132,10 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   }
 }
 
-function validateSyncCondition_(rowObj, settings, sectionMap, resolvedProjectId) {
+function validateSyncCondition_(rowObj, settings, resolvedProjectId) {
   if (!resolvedProjectId) return { ok: false, reason: 'todoist_project_id가 비어 있음(step_name 매핑 포함)' };
   if (!rowObj.plan_date) return { ok: false, reason: 'plan_date 비어 있음' };
   if (settings.exclude_done && rowObj.done_date) return { ok: false, reason: 'done_date가 있어 제외됨' };
-  if (!getTodoistSectionIdBySection_(rowObj.section, sectionMap, resolvedProjectId)) return { ok: false, reason: 'section 매핑 없음' };
   return { ok: true };
 }
 
