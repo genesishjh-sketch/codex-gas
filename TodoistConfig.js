@@ -113,6 +113,15 @@ var TODOIST_SETTINGS_LAYOUT = {
       ]
     },
     {
+      id: 'stepProjectMapping',
+      type: 'table',
+      title: 'step_name → 프로젝트 매핑',
+      header: ['match_type', 'pattern', 'todoist_project_id', 'priority', 'active', '설명'],
+      rows: [
+        ['exact', '상담', '', '10', 'TRUE', 'match_type: exact|contains|regex, priority 숫자가 낮을수록 우선']
+      ]
+    },
+    {
       id: 'sectionMapping',
       type: 'table',
       title: '섹션 매핑',
