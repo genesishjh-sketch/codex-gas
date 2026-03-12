@@ -266,6 +266,8 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   var keepRows = [];
   var preservedMetaByKey = {};
   var previousBaseByKey = {};
+  var existingRowByKey = {};
+  var removedMilestoneRows = [];
   if (lastRow >= dataStartRow) {
     var existing = milestonesSheet.getRange(dataStartRow, 1, lastRow - 1, maxCols).getValues();
     for (var i = 0; i < existing.length; i++) {
@@ -282,13 +284,17 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
 
       var meta = extractMilestoneMeta_(existing[i], baseMilestoneColCount);
       preservedMetaByKey[key] = meta;
+      existingRowByKey[key] = existing[i].slice();
     }
   }
 
+  var newMilestoneKeySet = {};
   var restoredRows = (newRows || []).map(function(row) {
     var rowCopy = row.slice();
     var key = makeMilestoneIdentityKey_(rowCopy);
     if (!key) return rowCopy;
+
+    newMilestoneKeySet[key] = true;
 
     var previousBase = previousBaseByKey[key];
     var currentBase = sliceMilestoneBaseRow_(rowCopy, baseMilestoneColCount);
@@ -313,6 +319,13 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
     return applyMilestoneMeta_(rowCopy, meta, baseMilestoneColCount);
   });
 
+  Object.keys(existingRowByKey).forEach(function(key) {
+    if (newMilestoneKeySet[key]) return;
+    removedMilestoneRows.push(existingRowByKey[key]);
+  });
+
+  cleanupRemovedMilestoneTodoistTasks_(removedMilestoneRows, baseMilestoneColCount);
+
   var finalRows = keepRows.concat(restoredRows);
   var writeWidth = Math.max(maxCols, baseMilestoneColCount + 5);
 
@@ -327,6 +340,27 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   if (finalRows.length > 0) {
     milestonesSheet.getRange(dataStartRow, 1, finalRows.length, writeWidth).setValues(finalRows);
   }
+}
+
+function cleanupRemovedMilestoneTodoistTasks_(removedRows, baseMilestoneColCount) {
+  if (!removedRows || removedRows.length === 0) return;
+  if (typeof todoistCloseTask_ !== 'function') return;
+
+  removedRows.forEach(function(row) {
+    try {
+      var meta = extractMilestoneMeta_(row, baseMilestoneColCount);
+      var taskId = (meta.todoist_task_id || '').toString().trim();
+      if (!taskId) return;
+
+      if (typeof prependSystemCleanupPrefixToTodoistTask_ === 'function') {
+        prependSystemCleanupPrefixToTodoistTask_(taskId);
+      }
+
+      todoistCloseTask_(taskId);
+    } catch (err) {
+      Logger.log('[TodoistSync] removed milestone close failed: %s', err && err.message ? err.message : err);
+    }
+  });
 }
 
 function sliceMilestoneBaseRow_(row, baseColCount) {
