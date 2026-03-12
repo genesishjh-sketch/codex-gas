@@ -123,6 +123,19 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
 
   var validate = validateSyncCondition_(rowObj, settings, resolvedProjectId);
   if (!validate.ok) {
+    if (validate.shouldCloseTodoistTask && rowObj.todoist_task_id) {
+      try {
+        prependSystemCleanupPrefixToTodoistTask_(rowObj.todoist_task_id);
+        todoistCloseTask_(rowObj.todoist_task_id);
+        updateTaskId_(sheet, row, '');
+        setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, 'Todoist 작업 완료 처리: ' + validate.reason, '');
+        markRowProcessed_(sheet, row, 'Todoist 완료처리');
+      } catch (closeErr) {
+        setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.ERROR, '', closeErr.message || String(closeErr));
+      }
+      return;
+    }
+
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.SKIPPED, validate.reason, '');
     return;
   }
@@ -166,10 +179,24 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   }
 }
 
+
+function prependSystemCleanupPrefixToTodoistTask_(taskId) {
+  var prefix = '[시스템정리] ';
+  var task = todoistGetTask_(taskId) || {};
+  var currentContent = (task.content || '').toString().trim();
+  if (!currentContent) return;
+  if (currentContent.indexOf(prefix) === 0) return;
+  todoistUpdateTask_(taskId, { content: prefix + currentContent });
+}
+
 function validateSyncCondition_(rowObj, settings, resolvedProjectId) {
   if (!resolvedProjectId) return { ok: false, reason: 'todoist_project_id가 비어 있음(step_name 매핑 포함)' };
-  if (!rowObj.plan_date) return { ok: false, reason: 'plan_date 비어 있음' };
-  if (settings.exclude_done && rowObj.done_date) return { ok: false, reason: 'done_date가 있어 제외됨' };
+  if (!rowObj.plan_date) {
+    return { ok: false, reason: 'plan_date 비어 있음', shouldCloseTodoistTask: true };
+  }
+  if (settings.exclude_done && rowObj.done_date) {
+    return { ok: false, reason: 'done_date가 있어 제외됨', shouldCloseTodoistTask: true };
+  }
   return { ok: true };
 }
 
