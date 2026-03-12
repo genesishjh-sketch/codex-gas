@@ -43,7 +43,8 @@ var INTERIOR_SYNC_CONFIG = {
 };
 
 var INTERIOR_TASK_UID = {
-  SOURCE_UID_COL: 26,          // Z열
+  SOURCE_HOME_UID_COL: 25,     // Y열 (홈스타일링)
+  SOURCE_CONSTRUCTION_UID_COL: 26, // Z열 (시공/지원)
   SOURCE_UID_HEADER_ROW: 1,
   SOURCE_UID_WARNING_ROW: 2,
   SOURCE_UID_HEADER_TEXT: '고유키',
@@ -289,13 +290,17 @@ function makeMilestoneRowWithUid_(projectCode, section, stepName, planDate, done
 
 function ensureSourceUidHeader_(sourceSheet) {
   if (!sourceSheet) return;
-  sourceSheet.getRange(INTERIOR_TASK_UID.SOURCE_UID_HEADER_ROW, INTERIOR_TASK_UID.SOURCE_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_HEADER_TEXT);
-  sourceSheet.getRange(INTERIOR_TASK_UID.SOURCE_UID_WARNING_ROW, INTERIOR_TASK_UID.SOURCE_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_WARNING_TEXT);
+  var headerRow = INTERIOR_TASK_UID.SOURCE_UID_HEADER_ROW;
+  var warningRow = INTERIOR_TASK_UID.SOURCE_UID_WARNING_ROW;
+  sourceSheet.getRange(headerRow, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_HEADER_TEXT);
+  sourceSheet.getRange(warningRow, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_WARNING_TEXT);
+  sourceSheet.getRange(headerRow, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_HEADER_TEXT);
+  sourceSheet.getRange(warningRow, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_WARNING_TEXT);
 }
 
 function getOrCreateSourceTaskUid_(sourceSheet, row, projectCode, section, stepName, planDate) {
   if (!sourceSheet || !row) return '';
-  var col = INTERIOR_TASK_UID.SOURCE_UID_COL;
+  var col = getSourceTaskUidColumnBySection_(section);
   var current = (sourceSheet.getRange(row, col).getDisplayValue() || '').toString().trim();
   if (current) return current;
 
@@ -308,6 +313,12 @@ function getOrCreateSourceTaskUid_(sourceSheet, row, projectCode, section, stepN
   var generated = 'T-' + seed + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
   sourceSheet.getRange(row, col).setValue(generated);
   return generated;
+}
+
+function getSourceTaskUidColumnBySection_(section) {
+  var normalized = (section || '').toString().trim();
+  if (normalized === '시공/지원') return INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL;
+  return INTERIOR_TASK_UID.SOURCE_HOME_UID_COL;
 }
 
 function sanitizeUidPart_(value) {

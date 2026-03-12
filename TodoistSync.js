@@ -443,7 +443,6 @@ function runTodoistCompletionMirrorToSource_() {
 function buildSourceUidRowMap_(sourceSheet) {
   var anchors = collectAnchorRows_(sourceSheet);
   var blockHeight = Math.max(1, (typeof getBlockHeight_ === 'function') ? getBlockHeight_(sourceSheet) : 9);
-  var uidCol = INTERIOR_TASK_UID.SOURCE_UID_COL;
   var out = {};
 
   anchors.forEach(function(anchorRow) {
@@ -451,14 +450,17 @@ function buildSourceUidRowMap_(sourceSheet) {
     var end = start + blockHeight - 1;
 
     for (var r = start; r <= end; r++) {
-      var uid = (sourceSheet.getRange(r, uidCol).getDisplayValue() || '').toString().trim();
-      if (!uid) continue;
-
       var hasHome = !!(sourceSheet.getRange(r, 7).getDisplayValue() || sourceSheet.getRange(r, 8).getDisplayValue() || sourceSheet.getRange(r, 9).getDisplayValue());
       var hasConstruction = !!(sourceSheet.getRange(r, 13).getDisplayValue() || sourceSheet.getRange(r, 14).getDisplayValue() || sourceSheet.getRange(r, 15).getDisplayValue());
 
-      if (hasHome) out[uid] = { row: r, doneCol: 9 };
-      if (hasConstruction) out[uid] = { row: r, doneCol: 15 };
+      if (hasHome) {
+        var homeUid = (sourceSheet.getRange(r, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).getDisplayValue() || '').toString().trim();
+        if (homeUid) out[homeUid] = { row: r, doneCol: 9 };
+      }
+      if (hasConstruction) {
+        var constructionUid = (sourceSheet.getRange(r, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).getDisplayValue() || '').toString().trim();
+        if (constructionUid) out[constructionUid] = { row: r, doneCol: 15 };
+      }
     }
   });
 
