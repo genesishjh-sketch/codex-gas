@@ -1,20 +1,7 @@
 /** milestones ↔ Todoist 동기화 로직 */
 function onMilestonesEditInstallable(e) {
-  try {
-    if (!e || !e.range) return;
-    var settings = getTodoistSyncSettings_();
-    if (!settings.realtime_sync) return;
-
-    var sheet = e.range.getSheet();
-    if (sheet.getName() !== settings.sync_target_sheet) return;
-    if (e.range.getRow() <= 1) return;
-
-    ensureMilestonesSyncColumns_(sheet);
-    syncMilestoneRowByRowNumber_(sheet, e.range.getRow(), settings);
-  } catch (err) {
-    Logger.log('[TodoistSync] onEdit 오류: %s', err && err.message ? err.message : err);
-    throw err;
-  }
+  // DB 동기화 기반 큐 처리로 전환되어 onEdit 실시간 동기화는 비활성화합니다.
+  Logger.log('[TodoistSync] onEdit 실시간 동기화 비활성화: runTodoistPendingQueueSync를 사용하세요.');
 }
 
 function syncSelectedMilestoneRowToTodoist() {
@@ -76,6 +63,53 @@ function runTodoistMilestonesFullSync() {
 function runTodoistMilestonesFullSyncByTrigger() {
   runTodoistMilestonesFullSync();
 }
+
+
+function runTodoistPendingQueueSyncByTrigger() {
+  runTodoistPendingQueueSync();
+}
+
+function runTodoistPendingQueueSync() {
+  var settings = getTodoistSyncSettings_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(settings.sync_target_sheet);
+  if (!sheet) throw new Error('동기화 대상 시트를 찾을 수 없습니다: ' + settings.sync_target_sheet);
+
+  ensureMilestonesSyncColumns_(sheet);
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var markerCol = TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX;
+  var markerValues = sheet.getRange(2, markerCol, lastRow - 1, 1).getDisplayValues();
+
+  for (var idx = 0; idx < markerValues.length; idx++) {
+    var marker = (markerValues[idx][0] || '').toString().trim();
+    if (marker !== '신규' && marker !== '수정') continue;
+
+    var row = idx + 2;
+    syncMilestoneRowByRowNumber_(sheet, row, settings);
+
+    var status = sheet.getRange(row, 8).getDisplayValue();
+    if (status && status.indexOf(TODOIST_SYNC.STATUS.ERROR) === 0) continue;
+
+    sheet.getRange(row, markerCol).setValue('반영');
+  }
+}
+
+function scheduleTodoistPendingQueueSyncFallback_() {
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === TODOIST_SYNC.PENDING_QUEUE_TRIGGER_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger(TODOIST_SYNC.PENDING_QUEUE_TRIGGER_HANDLER)
+    .timeBased()
+    .after(60 * 1000)
+    .create();
+}
+
 
 function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   var sectionMap = getSectionMappingMap_();
@@ -140,7 +174,7 @@ function validateSyncCondition_(rowObj, settings, resolvedProjectId) {
 }
 
 function getMilestoneRowObject_(sheet, row) {
-  var values = sheet.getRange(row, 1, 1, 12).getValues()[0];
+  var values = sheet.getRange(row, 1, 1, 11).getValues()[0];
   return {
     project_code: values[0],
     section: values[1],
@@ -152,7 +186,7 @@ function getMilestoneRowObject_(sheet, row) {
     sync_status: values[7],
     last_synced_at: values[8],
     last_error: values[9],
-    process_mark: values[11]
+    process_mark: values[10]
   };
 }
 
