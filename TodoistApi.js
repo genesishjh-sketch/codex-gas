@@ -10,6 +10,16 @@ function todoistUpdateTask_(taskId, payload) {
   return todoistRequest_('/tasks/' + encodeURIComponent(taskId), 'post', payload);
 }
 
+function todoistGetTask_(taskId) {
+  if (!taskId) throw new Error('조회 대상 taskId가 없습니다.');
+  return todoistRequest_('/tasks/' + encodeURIComponent(taskId), 'get');
+}
+
+function todoistCloseTask_(taskId) {
+  if (!taskId) throw new Error('완료 처리 대상 taskId가 없습니다.');
+  return todoistRequest_('/tasks/' + encodeURIComponent(taskId) + '/close', 'post', {});
+}
+
 function todoistRequest_(path, method, payload) {
   var tokenInfo = getTodoistApiToken_();
   if (!tokenInfo.token) {
