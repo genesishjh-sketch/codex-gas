@@ -27,6 +27,13 @@ function runInteriorDbSyncRealtimeByEdit(e) {
       notifyUiOnError: false,
       verbose: false
     });
+
+    if (typeof runTodoistPendingQueueSync === 'function') {
+      runTodoistPendingQueueSync();
+    }
+    if (typeof scheduleTodoistPendingQueueSyncFallback_ === 'function') {
+      scheduleTodoistPendingQueueSyncFallback_();
+    }
   } catch (err) {
     console.error('실시간 부분 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
@@ -258,6 +265,7 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
 
   var keepRows = [];
   var preservedMetaByKey = {};
+  var previousBaseByKey = {};
   if (lastRow >= dataStartRow) {
     var existing = milestonesSheet.getRange(dataStartRow, 1, lastRow - 1, maxCols).getValues();
     for (var i = 0; i < existing.length; i++) {
@@ -267,11 +275,12 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
         continue;
       }
 
-      var meta = extractMilestoneMeta_(existing[i], baseMilestoneColCount);
-      if (!meta.hasMeta) continue;
-
       var key = makeMilestoneIdentityKey_(existing[i]);
       if (!key) continue;
+
+      previousBaseByKey[key] = sliceMilestoneBaseRow_(existing[i], baseMilestoneColCount);
+
+      var meta = extractMilestoneMeta_(existing[i], baseMilestoneColCount);
       preservedMetaByKey[key] = meta;
     }
   }
@@ -279,12 +288,33 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   var restoredRows = (newRows || []).map(function(row) {
     var rowCopy = row.slice();
     var key = makeMilestoneIdentityKey_(rowCopy);
-    if (!key || !preservedMetaByKey[key]) return rowCopy;
-    return applyMilestoneMeta_(rowCopy, preservedMetaByKey[key], baseMilestoneColCount);
+    if (!key) return rowCopy;
+
+    var previousBase = previousBaseByKey[key];
+    var currentBase = sliceMilestoneBaseRow_(rowCopy, baseMilestoneColCount);
+    var isNew = !previousBase;
+    var isChanged = !!previousBase && !isSameMilestoneBaseRow_(previousBase, currentBase);
+
+    var meta = preservedMetaByKey[key] || {
+      hasMeta: false,
+      todoist_task_id: '',
+      sync_status: '',
+      last_synced_at: '',
+      last_error: '',
+      process_mark: ''
+    };
+
+    if (isNew) {
+      meta.process_mark = '신규';
+    } else if (isChanged) {
+      meta.process_mark = '수정';
+    }
+
+    return applyMilestoneMeta_(rowCopy, meta, baseMilestoneColCount);
   });
 
   var finalRows = keepRows.concat(restoredRows);
-  var writeWidth = Math.max(maxCols, baseMilestoneColCount);
+  var writeWidth = Math.max(maxCols, baseMilestoneColCount + 5);
 
   if (finalRows.length > 0) {
     finalRows = normalizeRowsToWidth_(finalRows, writeWidth);
@@ -297,6 +327,36 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   if (finalRows.length > 0) {
     milestonesSheet.getRange(dataStartRow, 1, finalRows.length, writeWidth).setValues(finalRows);
   }
+}
+
+function sliceMilestoneBaseRow_(row, baseColCount) {
+  var output = [];
+  var width = Math.max(0, Number(baseColCount) || 0);
+
+  for (var i = 0; i < width; i++) {
+    output.push(normalizeMilestoneBaseCell_(row[i]));
+  }
+
+  return output;
+}
+
+function normalizeMilestoneBaseCell_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
+  }
+
+  return (value === null || value === undefined) ? '' : String(value).trim();
+}
+
+function isSameMilestoneBaseRow_(a, b) {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+
+  return true;
 }
 
 function normalizeRowsToWidth_(rows, width) {
@@ -355,7 +415,7 @@ function extractMilestoneMeta_(row, baseColCount) {
   meta.sync_status = read(1) || '';
   meta.last_synced_at = read(2) || '';
   meta.last_error = read(3) || '';
-  meta.process_mark = read(5) || '';
+  meta.process_mark = read(4) || '';
   meta.hasMeta = !!(meta.todoist_task_id || meta.sync_status || meta.last_synced_at || meta.last_error || meta.process_mark);
   return meta;
 }
@@ -364,7 +424,7 @@ function applyMilestoneMeta_(row, meta, baseColCount) {
   var output = row.slice();
   var normalizedBase = Math.max(0, Number(baseColCount) || 0);
 
-  while (output.length < normalizedBase + 6) {
+  while (output.length < normalizedBase + 5) {
     output.push('');
   }
 
@@ -372,6 +432,6 @@ function applyMilestoneMeta_(row, meta, baseColCount) {
   output[normalizedBase + 1] = meta.sync_status || '';
   output[normalizedBase + 2] = meta.last_synced_at || '';
   output[normalizedBase + 3] = meta.last_error || '';
-  output[normalizedBase + 5] = meta.process_mark || '';
+  output[normalizedBase + 4] = meta.process_mark || '';
   return output;
 }

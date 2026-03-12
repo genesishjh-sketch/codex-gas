@@ -7,13 +7,13 @@ function setupTodoistMilestonesSync() {
   if (!target) throw new Error('동기화 대상 시트가 없습니다: ' + settings.sync_target_sheet);
 
   ensureMilestonesSyncColumns_(target);
-  installTodoistEditTrigger_();
+  removeTodoistEditTriggers_();
 
   var tokenInfo = getTodoistApiToken_();
   var message = [
     'Todoist 동기화 설치 완료',
     '- 대상 시트: ' + target.getName(),
-    '- 실시간 트리거: 설치됨',
+    '- 실시간 onEdit 트리거: 사용안함(K열 큐 기반)',
     '- API 토큰: ' + (tokenInfo.token ? '설정됨 (' + (tokenInfo.source === 'settings' ? 'settings 시트' : 'Script Properties') + ')' : '미설정 (settings 시트 todoist_api_token 또는 Script Properties TODOIST_API_TOKEN 설정 필요)')
   ].join('\n');
 
@@ -47,6 +47,14 @@ function installDailyTodoistSyncTrigger9am() {
 function removeDailyTodoistSyncTriggers() {
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
     if (trigger.getHandlerFunction() === TODOIST_SYNC.DAILY_TRIGGER_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+}
+
+function removeTodoistEditTriggers_() {
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === TODOIST_SYNC.INSTALLABLE_EDIT_TRIGGER_HANDLER) {
       ScriptApp.deleteTrigger(trigger);
     }
   });
