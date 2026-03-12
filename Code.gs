@@ -42,6 +42,18 @@ var INTERIOR_SYNC_CONFIG = {
   }
 };
 
+var INTERIOR_TASK_UID = {
+  SOURCE_HOME_UID_COL: 25,     // Y열 (홈스타일링)
+  SOURCE_CONSTRUCTION_UID_COL: 26, // Z열 (시공/지원)
+  SOURCE_UID_HEADER_ROW: 1,
+  SOURCE_UID_WARNING_ROW: 2,
+  SOURCE_UID_HEADER_TEXT: '고유키',
+  SOURCE_UID_WARNING_TEXT: '⚠️ 자동생성 고유키입니다. 수정/삭제 금지',
+  MILESTONE_UID_COL: 13,       // M열
+  MILESTONE_UID_HEADER_TEXT: '고유키',
+  MILESTONE_UID_WARNING_TEXT: '⚠️ 자동생성 고유키입니다. 수정/삭제 금지'
+};
+
 var INTERIOR_SYNC_KEYS = {
   AUTO_SYNC_ON_OPEN: 'INTERIOR_SYNC_ON_OPEN'
 };
@@ -226,17 +238,20 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     }
 
     if (stepName || planDate1 || doneDate) {
-      milestones.push([projectCode, '홈스타일링', stepName, planDate1, doneDate, manager1]);
+      var homeUid = getOrCreateSourceTaskUid_(sourceSheet, r1, projectCode, '홈스타일링', stepName, planDate1);
+      milestones.push(makeMilestoneRowWithUid_(projectCode, '홈스타일링', stepName, planDate1, doneDate, manager1, homeUid));
     }
   }
 
   for (var r2 = baseRow; r2 <= blockEndRow; r2++) {
     var category = getDisplay(r2, 13);
     var planDate2 = toYmd_(getValue(r2, 14));
+    var doneDate2 = toYmd_(getValue(r2, 15));
     var manager = normalizeManagerName_(getDisplay(r2, 16));
 
-    if (planDate2) {
-      milestones.push([projectCode, '시공/지원', category, planDate2, '', manager]);
+    if (category || planDate2 || doneDate2) {
+      var constructionUid = getOrCreateSourceTaskUid_(sourceSheet, r2, projectCode, '시공/지원', category, planDate2);
+      milestones.push(makeMilestoneRowWithUid_(projectCode, '시공/지원', category, planDate2, doneDate2, manager, constructionUid));
     }
   }
 
@@ -262,6 +277,54 @@ function buildRecordFromAnchor_(sourceSheet, anchorRow, nextAnchorRow) {
     sheetLink: links.sheetLink,
     milestones: milestones
   };
+}
+
+function makeMilestoneRowWithUid_(projectCode, section, stepName, planDate, doneDate, manager, uid) {
+  var row = [projectCode, section, stepName, planDate, doneDate, manager];
+  while (row.length < INTERIOR_TASK_UID.MILESTONE_UID_COL) {
+    row.push('');
+  }
+  row[INTERIOR_TASK_UID.MILESTONE_UID_COL - 1] = uid || '';
+  return row;
+}
+
+function ensureSourceUidHeader_(sourceSheet) {
+  if (!sourceSheet) return;
+  var headerRow = INTERIOR_TASK_UID.SOURCE_UID_HEADER_ROW;
+  var warningRow = INTERIOR_TASK_UID.SOURCE_UID_WARNING_ROW;
+  sourceSheet.getRange(headerRow, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_HEADER_TEXT);
+  sourceSheet.getRange(warningRow, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_WARNING_TEXT);
+  sourceSheet.getRange(headerRow, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_HEADER_TEXT);
+  sourceSheet.getRange(warningRow, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).setValue(INTERIOR_TASK_UID.SOURCE_UID_WARNING_TEXT);
+}
+
+function getOrCreateSourceTaskUid_(sourceSheet, row, projectCode, section, stepName, planDate) {
+  if (!sourceSheet || !row) return '';
+  var col = getSourceTaskUidColumnBySection_(section);
+  var current = (sourceSheet.getRange(row, col).getDisplayValue() || '').toString().trim();
+  if (current) return current;
+
+  var seed = [
+    sanitizeUidPart_(projectCode),
+    sanitizeUidPart_(section),
+    sanitizeUidPart_(stepName),
+    sanitizeUidPart_(planDate)
+  ].join('-');
+  var generated = 'T-' + seed + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  sourceSheet.getRange(row, col).setValue(generated);
+  return generated;
+}
+
+function getSourceTaskUidColumnBySection_(section) {
+  var normalized = (section || '').toString().trim();
+  if (normalized === '시공/지원') return INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL;
+  return INTERIOR_TASK_UID.SOURCE_HOME_UID_COL;
+}
+
+function sanitizeUidPart_(value) {
+  var raw = (value || '').toString().trim();
+  if (!raw) return 'NA';
+  return raw.replace(/\s+/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').slice(0, 12) || 'NA';
 }
 
 function normalizeManagerName_(managerName) {

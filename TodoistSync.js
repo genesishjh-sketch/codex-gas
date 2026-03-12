@@ -95,6 +95,8 @@ function runTodoistPendingQueueSync() {
 
     sheet.getRange(row, markerCol).setValue('반영');
   }
+
+  runTodoistCompletionMirrorToSource_();
 }
 
 function scheduleTodoistPendingQueueSyncFallback_() {
@@ -127,8 +129,8 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
       try {
         prependSystemCleanupPrefixToTodoistTask_(rowObj.todoist_task_id);
         todoistCloseTask_(rowObj.todoist_task_id);
-        updateTaskId_(sheet, row, '');
         setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, 'Todoist 작업 완료 처리: ' + validate.reason, '');
+        setSyncSource_(sheet, row, 'sheet');
         markRowProcessed_(sheet, row, 'Todoist 완료처리');
       } catch (closeErr) {
         setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.ERROR, '', closeErr.message || String(closeErr));
@@ -158,6 +160,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   if (sectionId) payload.section_id = sectionId;
 
   if (dueValue) payload.due_date = formatDateForTodoist_(dueValue);
+  appendTaskUidMetaToPayload_(payload, rowObj.task_uid);
   appendAssigneeIfEnabled_(payload, settings, effectiveManager, managerMap, resolvedProjectId);
   appendLabelsIfEnabled_(payload, settings, context);
   appendDescriptionIfEnabled_(payload, settings, context);
@@ -168,10 +171,15 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
       result = todoistCreateTask_(payload);
       updateTaskId_(sheet, row, result.id);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.CREATED, '', '');
+      setSyncSource_(sheet, row, 'sheet');
       markRowProcessed_(sheet, row, 'Todoist 동기화완료');
     } else {
+      if (!rowObj.done_date) {
+        try { todoistReopenTask_(rowObj.todoist_task_id); } catch (reopenErr) {}
+      }
       todoistUpdateTask_(rowObj.todoist_task_id, payload);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, '', '');
+      setSyncSource_(sheet, row, 'sheet');
       markRowProcessed_(sheet, row, 'Todoist 업데이트완료');
     }
   } catch (err) {
@@ -201,7 +209,7 @@ function validateSyncCondition_(rowObj, settings, resolvedProjectId) {
 }
 
 function getMilestoneRowObject_(sheet, row) {
-  var values = sheet.getRange(row, 1, 1, 11).getValues()[0];
+  var values = sheet.getRange(row, 1, 1, 13).getValues()[0];
   return {
     project_code: values[0],
     section: values[1],
@@ -213,7 +221,9 @@ function getMilestoneRowObject_(sheet, row) {
     sync_status: values[7],
     last_synced_at: values[8],
     last_error: values[9],
-    process_mark: values[10]
+    process_mark: values[10],
+    sync_source: values[11],
+    task_uid: values[12]
   };
 }
 
@@ -310,7 +320,16 @@ function resolveAssigneeIdFromMapping_(mapping, projectId) {
 
 function appendDescriptionIfEnabled_(payload, settings) {
   if (!settings.use_description) return;
-  payload.description = '';
+  payload.description = payload.description || '';
+}
+
+function appendTaskUidMetaToPayload_(payload, taskUid) {
+  var uid = (taskUid || '').toString().trim();
+  if (!uid) return;
+  var marker = 'meta_task_uid:' + uid;
+  var desc = (payload.description || '').toString();
+  if (desc.indexOf(marker) >= 0) return;
+  payload.description = desc ? (desc + '\n' + marker) : marker;
 }
 
 function appendLabelsIfEnabled_(payload, settings, context) {
@@ -324,7 +343,7 @@ function appendLabelsIfEnabled_(payload, settings, context) {
 
 function ensureMilestonesSyncColumns_(sheet) {
   var expected = TODOIST_SYNC.MILESTONE_HEADERS.concat(TODOIST_SYNC.SYNC_HEADERS);
-  var requiredCols = Math.max(expected.length, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX);
+  var requiredCols = Math.max(expected.length, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX, INTERIOR_TASK_UID.MILESTONE_UID_COL);
   if (sheet.getMaxColumns() < requiredCols) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredCols - sheet.getMaxColumns());
   }
@@ -338,6 +357,12 @@ function ensureMilestonesSyncColumns_(sheet) {
     }
   }
   if (needsWrite) sheet.getRange(1, 1, 1, expected.length).setValues([expected]);
+
+  sheet.getRange(1, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX).setValue('process_mark');
+  sheet.getRange(1, TODOIST_SYNC.SYNC_SOURCE_COLUMN_INDEX).setValue('sync_source');
+  var uidHeaderCell = sheet.getRange(1, INTERIOR_TASK_UID.MILESTONE_UID_COL);
+  uidHeaderCell.setValue(INTERIOR_TASK_UID.MILESTONE_UID_HEADER_TEXT);
+  uidHeaderCell.setNote(INTERIOR_TASK_UID.MILESTONE_UID_WARNING_TEXT);
 }
 
 function setSyncResult_(sheet, row, status, reason, errorText) {
@@ -345,8 +370,11 @@ function setSyncResult_(sheet, row, status, reason, errorText) {
 }
 
 function updateTaskId_(sheet, row, taskId) {
-  if (!taskId) return;
-  sheet.getRange(row, 7).setValue(String(taskId));
+  sheet.getRange(row, 7).setValue(taskId ? String(taskId) : '');
+}
+
+function setSyncSource_(sheet, row, source) {
+  sheet.getRange(row, TODOIST_SYNC.SYNC_SOURCE_COLUMN_INDEX).setValue((source || '').toString().trim());
 }
 
 
@@ -372,4 +400,69 @@ function formatDateForTodoist_(value) {
   var dateObj = (value instanceof Date) ? value : new Date(value);
   if (isNaN(dateObj.getTime())) return '';
   return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function runTodoistCompletionMirrorToSource_() {
+  var settings = getTodoistSyncSettings_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var milestonesSheet = ss.getSheetByName(settings.sync_target_sheet);
+  var sourceSheet = getSheetByAliases_(ss, INTERIOR_SYNC_CONFIG.SOURCE_SHEET_ALIASES);
+  if (!milestonesSheet || !sourceSheet) return;
+
+  var uidMap = buildSourceUidRowMap_(sourceSheet);
+  var lastRow = milestonesSheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var rows = milestonesSheet.getRange(2, 1, lastRow - 1, 13).getValues();
+  rows.forEach(function(values, idx) {
+    var rowNum = idx + 2;
+    var taskId = (values[6] || '').toString().trim();
+    var doneDate = values[4];
+    var uid = (values[12] || '').toString().trim();
+    if (!taskId || !uid) return;
+
+    var task;
+    try {
+      task = todoistGetTask_(taskId);
+    } catch (e) {
+      return;
+    }
+
+    var isCompleted = !!task.is_completed;
+    if (!isCompleted || doneDate) return;
+
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    milestonesSheet.getRange(rowNum, 5).setValue(today);
+    setSyncSource_(milestonesSheet, rowNum, 'todoist');
+
+    var hit = uidMap[uid];
+    if (hit) sourceSheet.getRange(hit.row, hit.doneCol).setValue(today);
+  });
+}
+
+function buildSourceUidRowMap_(sourceSheet) {
+  var anchors = collectAnchorRows_(sourceSheet);
+  var blockHeight = Math.max(1, (typeof getBlockHeight_ === 'function') ? getBlockHeight_(sourceSheet) : 9);
+  var out = {};
+
+  anchors.forEach(function(anchorRow) {
+    var start = Math.max(1, anchorRow - 7);
+    var end = start + blockHeight - 1;
+
+    for (var r = start; r <= end; r++) {
+      var hasHome = !!(sourceSheet.getRange(r, 7).getDisplayValue() || sourceSheet.getRange(r, 8).getDisplayValue() || sourceSheet.getRange(r, 9).getDisplayValue());
+      var hasConstruction = !!(sourceSheet.getRange(r, 13).getDisplayValue() || sourceSheet.getRange(r, 14).getDisplayValue() || sourceSheet.getRange(r, 15).getDisplayValue());
+
+      if (hasHome) {
+        var homeUid = (sourceSheet.getRange(r, INTERIOR_TASK_UID.SOURCE_HOME_UID_COL).getDisplayValue() || '').toString().trim();
+        if (homeUid) out[homeUid] = { row: r, doneCol: 9 };
+      }
+      if (hasConstruction) {
+        var constructionUid = (sourceSheet.getRange(r, INTERIOR_TASK_UID.SOURCE_CONSTRUCTION_UID_COL).getDisplayValue() || '').toString().trim();
+        if (constructionUid) out[constructionUid] = { row: r, doneCol: 15 };
+      }
+    }
+  });
+
+  return out;
 }

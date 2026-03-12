@@ -20,6 +20,11 @@ function todoistCloseTask_(taskId) {
   return todoistRequest_('/tasks/' + encodeURIComponent(taskId) + '/close', 'post', {});
 }
 
+function todoistReopenTask_(taskId) {
+  if (!taskId) throw new Error('재오픈 대상 taskId가 없습니다.');
+  return todoistRequest_('/tasks/' + encodeURIComponent(taskId) + '/reopen', 'post', {});
+}
+
 function todoistRequest_(path, method, payload) {
   var tokenInfo = getTodoistApiToken_();
   if (!tokenInfo.token) {

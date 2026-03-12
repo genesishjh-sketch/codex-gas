@@ -73,7 +73,7 @@ const CONFIG = {
   /** (캘린더 등) 기존 호환용 - 필요시만 사용 */
   TASK_COLS: [
     { labelCol: 7,  dateCol: 8,  prefix: "" },        // 홈스타일링 예정일(H)
-    { labelCol: 13, dateCol: 14, prefix: "[시공] " }  // (H 오른쪽 2열 추가 후) 시공 M/N 가정
+    { labelCol: 13, dateCol: 14, doneCol: 15, prefix: "[시공] " }  // 시공/지원 M/N/O
   ],
 
   /** ✅ 드라이브 체크(캐시/표시) */
