@@ -33,6 +33,12 @@ var TODOIST_SYNC = {
     MAX_RUNTIME_MS: 330000,
     CURSOR_PROPERTY_KEY: 'TODOIST_FULL_SYNC_LAST_ROW'
   },
+  COMPLETION_MIRROR: {
+    HOURLY_TRIGGER_HANDLER: 'runTodoistCompletionMirrorHourlyByTrigger',
+    ON_OPEN_MIN_INTERVAL_SEC: 120,
+    BURST_WINDOW_MINUTES: 20,
+    BURST_STEP_MINUTES: 2
+  },
   INSTALLABLE_EDIT_TRIGGER_HANDLER: 'onMilestonesEditInstallable',
   DAILY_TRIGGER_HANDLER: 'runTodoistMilestonesFullSyncByTrigger',
   PENDING_QUEUE_TRIGGER_HANDLER: 'runTodoistPendingQueueSyncByTrigger'

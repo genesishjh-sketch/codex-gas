@@ -59,3 +59,28 @@ function removeTodoistEditTriggers_() {
     }
   });
 }
+
+
+function installHourlyTodoistCompletionMirrorTrigger() {
+  removeHourlyTodoistCompletionMirrorTriggers();
+  var handler = (TODOIST_SYNC.COMPLETION_MIRROR && TODOIST_SYNC.COMPLETION_MIRROR.HOURLY_TRIGGER_HANDLER)
+    || 'runTodoistCompletionMirrorHourlyByTrigger';
+
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .everyHours(1)
+    .create();
+
+  alertIfPossible_(getUiIfAvailable_(), 'Todoist 완료 반영 트리거를 1시간 간격으로 설치했습니다.');
+}
+
+function removeHourlyTodoistCompletionMirrorTriggers() {
+  var handler = (TODOIST_SYNC.COMPLETION_MIRROR && TODOIST_SYNC.COMPLETION_MIRROR.HOURLY_TRIGGER_HANDLER)
+    || 'runTodoistCompletionMirrorHourlyByTrigger';
+
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+}

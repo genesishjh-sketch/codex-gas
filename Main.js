@@ -32,6 +32,11 @@ function onOpen() {
     runDriveCheckActive(true);
   } catch (e) {}
 
+  // ✅ Todoist 완료건 → 시트 반영(onOpen 1회 체크, 과도 실행 방지 포함)
+  try {
+    if (typeof runTodoistCompletionMirrorOnOpen_ === 'function') runTodoistCompletionMirrorOnOpen_();
+  } catch (e) {}
+
   // 단순 트리거(onOpen)는 30초 제한이라 무거운 DB 동기화를 실행하지 않습니다.
   // (자동 동기화는 메뉴의 '매일 오전 6시 자동 동기화 설치' 사용 권장)
 }

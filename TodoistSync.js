@@ -69,6 +69,23 @@ function runTodoistPendingQueueSyncByTrigger() {
   runTodoistPendingQueueSync();
 }
 
+function runTodoistCompletionMirrorHourlyByTrigger() {
+  runTodoistCompletionMirrorToSource_();
+}
+
+function runTodoistCompletionMirrorOnOpen_() {
+  var cfg = (TODOIST_SYNC && TODOIST_SYNC.COMPLETION_MIRROR) || {};
+  var minIntervalSec = Number(cfg.ON_OPEN_MIN_INTERVAL_SEC) || 120;
+  var props = PropertiesService.getDocumentProperties();
+  var key = 'TODOIST_COMPLETION_MIRROR_LAST_ONOPEN_AT';
+  var now = Date.now();
+  var last = Number(props.getProperty(key) || 0);
+  if (last && (now - last) < (minIntervalSec * 1000)) return;
+
+  runTodoistCompletionMirrorToSource_();
+  props.setProperty(key, String(now));
+}
+
 function runTodoistPendingQueueSync() {
   var settings = getTodoistSyncSettings_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -106,10 +123,16 @@ function scheduleTodoistPendingQueueSyncFallback_() {
     }
   });
 
-  ScriptApp.newTrigger(TODOIST_SYNC.PENDING_QUEUE_TRIGGER_HANDLER)
-    .timeBased()
-    .after(60 * 1000)
-    .create();
+  var burstCfg = (TODOIST_SYNC && TODOIST_SYNC.COMPLETION_MIRROR) || {};
+  var burstWindow = Math.max(2, Number(burstCfg.BURST_WINDOW_MINUTES) || 20);
+  var burstStep = Math.max(1, Number(burstCfg.BURST_STEP_MINUTES) || 2);
+
+  for (var minute = burstStep; minute <= burstWindow; minute += burstStep) {
+    ScriptApp.newTrigger(TODOIST_SYNC.PENDING_QUEUE_TRIGGER_HANDLER)
+      .timeBased()
+      .after(minute * 60 * 1000)
+      .create();
+  }
 }
 
 
@@ -419,7 +442,7 @@ function runTodoistCompletionMirrorToSource_() {
     var taskId = (values[6] || '').toString().trim();
     var doneDate = values[4];
     var uid = (values[12] || '').toString().trim();
-    if (!taskId || !uid) return;
+    if (!taskId || !uid || doneDate) return;
 
     var task;
     try {
@@ -429,7 +452,7 @@ function runTodoistCompletionMirrorToSource_() {
     }
 
     var isCompleted = !!task.is_completed;
-    if (!isCompleted || doneDate) return;
+    if (!isCompleted) return;
 
     var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     milestonesSheet.getRange(rowNum, 5).setValue(today);
