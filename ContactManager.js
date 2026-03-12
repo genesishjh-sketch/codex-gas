@@ -297,19 +297,7 @@ function findContactPersonByPhone_(phone) {
         PEOPLE_READ_QUOTA_EXCEEDED_ = true;
         return [];
       }
-      try {
-        response = People.People.searchContacts({
-          query: query,
-          personFields: PEOPLE_READ_MASK,
-          pageSize: 30
-        });
-      } catch (e2) {
-        if (isPeopleReadQuotaExceededError_(e2)) {
-          PEOPLE_READ_QUOTA_EXCEEDED_ = true;
-          return [];
-        }
-        throw e2;
-      }
+      throw e;
     }
     var results = (response && response.results) ? response.results : [];
     var matched = [];
