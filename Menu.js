@@ -10,6 +10,8 @@ function addInteriorSyncMenu_() {
     .addItem('Todoist 동기화 설치', 'setupTodoistMilestonesSync')
     .addItem('Todoist 현재 행 동기화', 'syncSelectedMilestoneRowToTodoist')
     .addItem('Todoist 전체 재동기화', 'runTodoistMilestonesFullSync')
+    .addItem('Todoist 완료 반영(1시간) 설치', 'installHourlyTodoistCompletionMirrorTrigger')
+    .addItem('Todoist 완료 반영(1시간) 제거', 'removeHourlyTodoistCompletionMirrorTriggers')
     .addItem('Todoist 매일 오전 자동동기화 설치', 'installDailyTodoistSyncTrigger9am')
     .addItem('Todoist 매일 자동동기화 제거', 'removeDailyTodoistSyncTriggers')
     .addSeparator()
