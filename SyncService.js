@@ -69,6 +69,8 @@ function syncInteriorDbByAnchors_(ss, anchors, options) {
       throw new Error('필수 시트를 찾을 수 없습니다. 누락: ' + missing.join('/'));
     }
 
+    ensureSourceUidHeader_(sourceSheet);
+
     if (normalizedAnchors.length === 0) {
       if (options.emptyMessage) {
         ss.toast(options.emptyMessage, options.toastTitle || '🛋️ 인테리어 관리', 5);
@@ -404,7 +406,15 @@ function normalizeRowsToWidth_(rows, width) {
 }
 
 function makeMilestoneIdentityKey_(row) {
-  if (!row || row.length < 4) return '';
+  if (!row) return '';
+
+  var uid = '';
+  if (row.length >= INTERIOR_TASK_UID.MILESTONE_UID_COL) {
+    uid = normalizeIdentityPart_(row[INTERIOR_TASK_UID.MILESTONE_UID_COL - 1]);
+  }
+  if (uid) return 'uid||' + uid;
+
+  if (row.length < 4) return '';
   var projectCode = normalizeIdentityPart_(row[0]);
   var section = normalizeIdentityPart_(row[1]);
   var stepName = normalizeIdentityPart_(row[2]);

@@ -27,6 +27,7 @@ var TODOIST_SYNC = {
     // 아래 텍스트가 포함되면 전체 재동기화에서 이미 처리된 행으로 간주하여 스킵
     SKIP_KEYWORDS: ['반영', '동기화완료', '투두이시트완료', 'todoist완료']
   },
+  SYNC_SOURCE_COLUMN_INDEX: 12, // L열
   FULL_SYNC: {
     // Apps Script 실행 시간 제한(약 6분) 전에 안전하게 종료하기 위한 예산
     MAX_RUNTIME_MS: 330000,
