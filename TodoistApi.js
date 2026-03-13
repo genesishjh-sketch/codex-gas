@@ -25,6 +25,49 @@ function todoistReopenTask_(taskId) {
   return todoistRequest_('/tasks/' + encodeURIComponent(taskId) + '/reopen', 'post', {});
 }
 
+function todoistFindActiveTaskByTaskUid_(projectId, taskUid) {
+  var normalizedProjectId = (projectId || '').toString().trim();
+  var normalizedUid = (taskUid || '').toString().trim();
+  if (!normalizedProjectId || !normalizedUid) return null;
+
+  var marker = 'meta_task_uid:' + normalizedUid;
+  var tasks = todoistRequest_('/tasks?project_id=' + encodeURIComponent(normalizedProjectId), 'get');
+  if (!tasks || !tasks.length) return null;
+
+  for (var i = 0; i < tasks.length; i++) {
+    var task = tasks[i] || {};
+    var description = (task.description || '').toString();
+    if (description.indexOf(marker) >= 0) return task;
+  }
+
+  return null;
+}
+
+function todoistGetCompletedTaskByTaskId_(taskId) {
+  var normalizedTaskId = (taskId || '').toString().trim();
+  if (!normalizedTaskId) return null;
+
+  var cursor = '';
+  while (true) {
+    var path = '/tasks/completed/by_completion_date?limit=200';
+    if (cursor) {
+      path += '&cursor=' + encodeURIComponent(cursor);
+    }
+
+    var response = todoistRequest_(path, 'get');
+    var items = response.items || [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i] || {};
+      if ((item.task_id || '').toString().trim() === normalizedTaskId) return item;
+    }
+
+    cursor = response.next_cursor || '';
+    if (!cursor) break;
+  }
+
+  return null;
+}
+
 function todoistRequest_(path, method, payload) {
   var tokenInfo = getTodoistApiToken_();
   if (!tokenInfo.token) {
