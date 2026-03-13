@@ -191,6 +191,14 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
   try {
     var result;
     if (!rowObj.todoist_task_id) {
+      var existingTask = findExistingTodoistTaskByUid_(resolvedProjectId, rowObj.task_uid);
+      if (existingTask && existingTask.id) {
+        updateTaskId_(sheet, row, existingTask.id);
+        rowObj.todoist_task_id = existingTask.id;
+      }
+    }
+
+    if (!rowObj.todoist_task_id) {
       result = todoistCreateTask_(payload);
       updateTaskId_(sheet, row, result.id);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.CREATED, '', '');
@@ -207,6 +215,18 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
     }
   } catch (err) {
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.ERROR, '', err.message || String(err));
+  }
+}
+
+function findExistingTodoistTaskByUid_(projectId, taskUid) {
+  var normalizedUid = (taskUid || '').toString().trim();
+  if (!normalizedUid) return null;
+
+  try {
+    return todoistFindActiveTaskByTaskUid_(projectId, normalizedUid);
+  } catch (e) {
+    Logger.log('[TodoistSync] find by uid failed project=%s uid=%s err=%s', projectId, normalizedUid, e && e.message ? e.message : e);
+    return null;
   }
 }
 
@@ -445,13 +465,21 @@ function runTodoistCompletionMirrorToSource_() {
     if (!taskId || !uid || doneDate) return;
 
     var task;
+    var isCompleted = false;
     try {
       task = todoistGetTask_(taskId);
+      isCompleted = !!task.is_completed;
     } catch (e) {
-      return;
+      // 완료된 태스크는 /tasks/{id}에서 조회 실패(404)할 수 있어 completed 목록에서 보강 조회
+      var completedTask = null;
+      try {
+        completedTask = todoistGetCompletedTaskByTaskId_(taskId);
+      } catch (completedErr) {
+        completedTask = null;
+      }
+      isCompleted = !!completedTask;
     }
 
-    var isCompleted = !!task.is_completed;
     if (!isCompleted) return;
 
     var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
