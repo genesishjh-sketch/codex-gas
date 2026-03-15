@@ -249,6 +249,53 @@ function makeStopController_() {
 }
 
 /** =========================
+ *  실행 시간 예산 컨트롤러
+ *  - Apps Script 최대 실행시간(약 6분) 전에 루프를 중단하기 위한 보호막
+ *  ========================= */
+
+
+function getMasterDoneConfig_() {
+  var cfg = (CONFIG && CONFIG.MASTER_DONE) || {};
+  return {
+    rowOffset: Number(cfg.row) || 0,
+    col: Number(cfg.col) || 27,
+    doneValue: (cfg.doneValue || '완료').toString()
+  };
+}
+
+function isMasterSetupMarked_(sheet, blockStartRow) {
+  var doneCfg = getMasterDoneConfig_();
+  var cellValue = sheet.getRange(blockStartRow + doneCfg.rowOffset, doneCfg.col).getDisplayValue();
+  return String(cellValue || '').trim() === doneCfg.doneValue;
+}
+
+function setMasterSetupMarked_(sheet, blockStartRow, isDone) {
+  var doneCfg = getMasterDoneConfig_();
+  var value = isDone ? doneCfg.doneValue : '';
+  sheet.getRange(blockStartRow + doneCfg.rowOffset, doneCfg.col).setValue(value);
+}
+
+function makeRuntimeBudget_(maxRuntimeMs) {
+  var limit = Number(maxRuntimeMs) || 0;
+  if (limit <= 0) {
+    return {
+      shouldStop: function() { return false; },
+      elapsedMs: function() { return 0; }
+    };
+  }
+
+  var startedAt = Date.now();
+  return {
+    shouldStop: function() {
+      return (Date.now() - startedAt) >= limit;
+    },
+    elapsedMs: function() {
+      return Date.now() - startedAt;
+    }
+  };
+}
+
+/** =========================
  *  주소 문자열 분리
  *  - base: 지번까지 ("... 719-8")
  *  - extra: 지번 뒤 나머지(호/층 등) — 괄호(도로명) 제거

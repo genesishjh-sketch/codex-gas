@@ -8,7 +8,8 @@
  * - 연속 빈 블록 N개면 중단
  */
 
-function createFoldersBatch(isSilent, force) {
+function createFoldersBatch(isSilent, force, options) {
+  options = options || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
@@ -28,9 +29,22 @@ function createFoldersBatch(isSilent, force) {
 
   var labelCol = (CONFIG && CONFIG.POS_FOLDER_LABEL_COL) || 18; // R
   var urlCol = (CONFIG && (CONFIG.POS_FOLDER_URL_COL || CONFIG.DRIVE_MARK_COL)) || 19; // S
+  var runtime = makeRuntimeBudget_(Number(options.maxRuntimeMs) || 0);
+  var cursorKey = options.cursorKey || "";
+  var scriptProps = cursorKey ? PropertiesService.getScriptProperties() : null;
+  var savedCursor = scriptProps ? parseInt(scriptProps.getProperty(cursorKey) || "", 10) : NaN;
+  var startRow = (savedCursor >= CONFIG.START_ROW && savedCursor <= lastRow) ? savedCursor : CONFIG.START_ROW;
+  var timedOut = false;
+  var targetRowsMap = options.targetRowsMap || null;
 
-  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+  for (var r = startRow; r <= lastRow; r += blockHeight) {
+    if (runtime.shouldStop()) {
+      timedOut = true;
+      if (scriptProps) scriptProps.setProperty(cursorKey, String(r));
+      break;
+    }
     if (stopCtl.check(sheet, r)) break;
+    if (targetRowsMap && !targetRowsMap[r]) continue;
 
     try {
       var nameVal = sheet.getRange(r, CONFIG.POS_NAME.col).getDisplayValue();
@@ -97,10 +111,13 @@ function createFoldersBatch(isSilent, force) {
     }
   }
 
+  if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
+
   var summary = "Processed " + processedCount + "/ Skipped " + skipCount;
+  if (timedOut) summary += " / ⏱️ 시간예산 도달(이어하기 필요)";
   if (!isSilent) SpreadsheetApp.getUi().alert("Folder create done\n" + summary);
 
-  return { summary: summary, successList: successList, failedList: failedList };
+  return { summary: summary, successList: successList, failedList: failedList, timedOut: timedOut };
 }
 
 function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
