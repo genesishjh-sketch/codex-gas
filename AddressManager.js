@@ -9,7 +9,8 @@
  * - ✅ 연속 빈 블록 N개면 중단
  */
 
-function updateAddressesBatch(isSilent) {
+function updateAddressesBatch(isSilent, options) {
+  options = options || {};
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
@@ -23,9 +24,22 @@ function updateAddressesBatch(isSilent) {
   var failedList = [];
 
   var cleanKey = (KAKAO_API_KEY || "").toString().trim();
+  var runtime = makeRuntimeBudget_(Number(options.maxRuntimeMs) || 0);
+  var cursorKey = options.cursorKey || "";
+  var scriptProps = cursorKey ? PropertiesService.getScriptProperties() : null;
+  var savedCursor = scriptProps ? parseInt(scriptProps.getProperty(cursorKey) || "", 10) : NaN;
+  var startRow = (savedCursor >= CONFIG.START_ROW && savedCursor <= lastRow) ? savedCursor : CONFIG.START_ROW;
+  var timedOut = false;
+  var targetRowsMap = options.targetRowsMap || null;
 
-  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+  for (var r = startRow; r <= lastRow; r += blockHeight) {
+    if (runtime.shouldStop()) {
+      timedOut = true;
+      if (scriptProps) scriptProps.setProperty(cursorKey, String(r));
+      break;
+    }
     if (stopCtl.check(sheet, r)) break;
+    if (targetRowsMap && !targetRowsMap[r]) continue;
 
     var nameVal = sheet.getRange(r + CONFIG.POS_NAME.row, CONFIG.POS_NAME.col).getDisplayValue();
     if (!isValidName(nameVal)) { continue; }
@@ -97,9 +111,15 @@ function updateAddressesBatch(isSilent) {
     }
   }
 
-  if (!isSilent) SpreadsheetApp.getUi().alert("✅ 주소 변환 완료");
+  if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
+
+  var summary = "신규 " + successCount + "건 / 이미완료 " + skipCount + "건 / 실패 " + failCount + "건";
+  if (timedOut) summary += " / ⏱️ 시간예산 도달(이어하기 필요)";
+
+  if (!isSilent) SpreadsheetApp.getUi().alert("✅ 주소 변환 완료" + (timedOut ? " (일부 처리)" : ""));
   return {
-    summary: "신규 " + successCount + "건 / 이미완료 " + skipCount + "건 / 실패 " + failCount + "건",
-    failedList: failedList
+    summary: summary,
+    failedList: failedList,
+    timedOut: timedOut
   };
 }

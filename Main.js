@@ -60,9 +60,29 @@ function runMasterSync() {
     return;
   }
 
-  var addrResult = (typeof updateAddressesBatch === "function") ? updateAddressesBatch(true) : { summary: "주소 변환 함수 없음", failedList: [] };
-  var folderResult = (typeof createFoldersBatch === "function") ? createFoldersBatch(true, false) : { summary: "폴더 생성 함수 없음", successList: [], failedList: [] };
-  var contactResult = (typeof syncContactsBatch === "function") ? syncContactsBatch(true) : { summary: "연락처 동기화 함수 없음" };
+  var sheet = getMainSheet_();
+  var pendingRows = collectMasterSyncPendingRows_(sheet);
+  if (pendingRows.length === 0) {
+    ui.alert("ℹ️ 신규 세팅 대상이 없습니다.\n(AA 완료마커가 없는 프로젝트만 처리됩니다.)");
+    return;
+  }
+
+  var targetRowsMap = {};
+  pendingRows.forEach(function(row) { targetRowsMap[row] = true; });
+
+  var batchBudgetMs = 90000; // 90초씩 분할 실행해 전체 타임아웃(6분) 위험을 낮춤
+
+  var addrResult = (typeof updateAddressesBatch === "function")
+    ? updateAddressesBatch(true, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_ADDR_CURSOR", targetRowsMap: targetRowsMap })
+    : { summary: "주소 변환 함수 없음", failedList: [], timedOut: false };
+
+  var folderResult = (typeof createFoldersBatch === "function")
+    ? createFoldersBatch(true, false, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_FOLDER_CURSOR", targetRowsMap: targetRowsMap })
+    : { summary: "폴더 생성 함수 없음", successList: [], failedList: [], timedOut: false };
+
+  var contactResult = (typeof syncContactsBatch === "function")
+    ? syncContactsBatch(true, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_CONTACT_CURSOR", targetRowsMap: targetRowsMap })
+    : { summary: "연락처 동기화 함수 없음", timedOut: false };
 
   var finalMsg = "✅ [잔금일 기준 번호 재정렬]\n" + (renumberResult.message || "") + "\n";
   finalMsg += "\n✅ [주소 변환]\n" + (addrResult.summary || "") + "\n";
@@ -74,10 +94,42 @@ function runMasterSync() {
 
   finalMsg += "\n✅ [연락처]\n" + (contactResult.summary || "") + "\n";
 
+  var hasContinuation = !!(addrResult.timedOut || folderResult.timedOut || contactResult.timedOut);
+  if (hasContinuation) {
+    finalMsg += "\n⚠️ 일부 단계가 시간예산에 도달해 중간 저장되었습니다.\n";
+    finalMsg += "같은 메뉴를 다시 실행하면 중단 지점부터 이어서 처리합니다.\n";
+  } else {
+    markMasterSyncRowsDone_(sheet, pendingRows);
+    finalMsg += "\n✅ AA열 완료마커를 기록했습니다.\n";
+    finalMsg += "AA 완료마커를 삭제하면 해당 프로젝트를 다시 세팅합니다.\n";
+  }
+
   ui.alert("🎉 작업 완료 리포트\n\n" + finalMsg);
 
   // 끝나고 진행만 드라이브 체크
   runDriveCheckActive(true);
+}
+
+function collectMasterSyncPendingRows_(sheet) {
+  var blockHeight = getBlockHeight_(sheet);
+  var lastRow = sheet.getLastRow();
+  var rows = [];
+
+  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+    var nameVal = sheet.getRange(r + CONFIG.POS_NAME.row, CONFIG.POS_NAME.col).getDisplayValue();
+    if (!isValidName(nameVal)) continue;
+    if (isClosedBlock_(sheet, r)) continue;
+    if (isMasterSetupMarked_(sheet, r)) continue;
+    rows.push(r);
+  }
+
+  return rows;
+}
+
+function markMasterSyncRowsDone_(sheet, rows) {
+  (rows || []).forEach(function(r) {
+    setMasterSetupMarked_(sheet, r, true);
+  });
 }
 
 function runContactSync() {

@@ -423,7 +423,8 @@ function ensureContact_(displayName, phone, addressLine, mapUrl) {
  * - ✅ 연속 빈 블록 N개면 중단
  * - ✅ 연락처_log에 있으면 ContactsApp 조회 자체 스킵
  */
-function syncContactsBatch(isSilent) {
+function syncContactsBatch(isSilent, options) {
+  options = options || {};
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
@@ -448,9 +449,22 @@ function syncContactsBatch(isSilent) {
 
   var pendingAppends = [];
   var pendingUpdates = [];
+  var runtime = makeRuntimeBudget_(Number(options.maxRuntimeMs) || 0);
+  var cursorKey = options.cursorKey || "";
+  var scriptProps = cursorKey ? PropertiesService.getScriptProperties() : null;
+  var savedCursor = scriptProps ? parseInt(scriptProps.getProperty(cursorKey) || "", 10) : NaN;
+  var startRow = (savedCursor >= CONFIG.START_ROW && savedCursor <= lastRow) ? savedCursor : CONFIG.START_ROW;
+  var timedOut = false;
+  var targetRowsMap = options.targetRowsMap || null;
 
-  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+  for (var r = startRow; r <= lastRow; r += blockHeight) {
+    if (runtime.shouldStop()) {
+      timedOut = true;
+      if (scriptProps) scriptProps.setProperty(cursorKey, String(r));
+      break;
+    }
     if (stopCtl.check(sheet, r)) break;
+    if (targetRowsMap && !targetRowsMap[r]) continue;
 
     if (isClosedBlock_(sheet, r)) { skipped++; continue; }
 
@@ -552,12 +566,15 @@ function syncContactsBatch(isSilent) {
     logSheet.getRange(start, 1, pendingAppends.length, 9).setValues(pendingAppends);
   }
 
+  if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
+
   var summary =
     "생성 " + created +
     " / 기존 " + existed +
     " / 로그스킵 " + cached +
     " / 건너뜀 " + skipped +
     " / 실패 " + failed;
+  if (timedOut) summary += " / ⏱️ 시간예산 도달(이어하기 필요)";
 
   if (quotaBypass > 0) {
     summary += " / 읽기쿼터우회 " + quotaBypass;
@@ -568,7 +585,7 @@ function syncContactsBatch(isSilent) {
   }
 
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 동기화 완료\n" + summary);
-  return { summary: summary };
+  return { summary: summary, timedOut: timedOut };
 }
 
 /**

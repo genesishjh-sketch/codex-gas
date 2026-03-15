@@ -27,6 +27,9 @@ const CONFIG = {
   POS_ADDR_EXTRA: { row: 2, col: 6 }, // F6: 지번 뒤 추가정보(호/층 등)
   POS_MAP:    { row: 4, col: 6 },   // F8: 지도 URL
 
+  /** ✅ 마스터 세팅 완료 마커(AA열) */
+  MASTER_DONE: { row: 0, col: 27, doneValue: "완료" },
+
   /**
    * ✅ 물품리스트 링크 위치
    * - H 오른쪽에 2열 추가한 구조라면 I→K로 밀렸을 가능성이 큼
