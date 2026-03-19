@@ -54,6 +54,22 @@ function ensureTodoistSettingsLayout_() {
   }
 
   var values = sheet.getDataRange().getDisplayValues();
+  var hasUserContent = values.some(function(row) {
+    return row.some(function(cell) {
+      return (cell || '').toString().trim() !== '';
+    });
+  });
+
+  // 운영 데이터 보존 우선:
+  // - 사용자가 이미 settings를 작성했다면 전체 clear/재작성하지 않습니다.
+  // - 누락된 키/매핑 헤더만 하단에 보강해서 기존 기록 유실을 방지합니다.
+  if (hasUserContent) {
+    ensureTodoistSettingsMissingRows_(sheet, values);
+    return sheet;
+  }
+
+  // 초기 1회 생성(빈 시트일 때만 템플릿 전체 작성)
+  values = sheet.getDataRange().getDisplayValues();
   var existingKeyValue = {};
 
   values.forEach(function(row) {
@@ -125,6 +141,67 @@ function ensureTodoistSettingsLayout_() {
   sheet.autoResizeColumns(1, maxWidth);
 
   return sheet;
+}
+
+function ensureTodoistSettingsMissingRows_(sheet, values) {
+  var existingNormalizedKeys = {};
+  values.forEach(function(row) {
+    var normalized = normalizeSettingKey_(row[0]);
+    if (!normalized) return;
+    existingNormalizedKeys[normalized] = true;
+  });
+
+  var appendRows = [];
+
+  TODOIST_SETTINGS_LAYOUT.sections.forEach(function(section) {
+    if (section.type === 'keyValue' && section.rows) {
+      section.rows.forEach(function(row) {
+        var normalizedKey = normalizeSettingKey_(row.key);
+        if (existingNormalizedKeys[normalizedKey]) return;
+        appendRows.push([row.key, row.defaultValue, row.description || '', row.example || '', '']);
+      });
+      return;
+    }
+
+    if (section.type === 'table') {
+      var header = section.header || [];
+      if (!header.length) return;
+
+      var hasHeader = false;
+      for (var r = 0; r < values.length; r++) {
+        var matched = true;
+        for (var c = 0; c < header.length; c++) {
+          if (normalizeSettingKey_(values[r][c]) !== normalizeSettingKey_(header[c])) {
+            matched = false;
+            break;
+          }
+        }
+        if (matched) {
+          hasHeader = true;
+          break;
+        }
+      }
+
+      if (!hasHeader) {
+        if (appendRows.length > 0) appendRows.push(['', '', '', '', '']);
+        appendRows.push([section.title, '', '', '', '']);
+        appendRows.push(header.slice());
+        (section.rows || []).forEach(function(row) {
+          appendRows.push(row.slice());
+        });
+      }
+    }
+  });
+
+  if (appendRows.length === 0) return;
+  var startRow = sheet.getLastRow() + 1;
+  var width = appendRows.reduce(function(max, row) { return Math.max(max, row.length); }, 1);
+  var normalized = appendRows.map(function(row) {
+    var copy = row.slice();
+    while (copy.length < width) copy.push('');
+    return copy;
+  });
+  sheet.getRange(startRow, 1, normalized.length, width).setValues(normalized);
 }
 
 function extractMappingRowsFromValues_(values, header) {
