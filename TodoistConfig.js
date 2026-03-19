@@ -5,6 +5,7 @@ var TODOIST_SYNC = {
   PROPERTY_API_TOKEN: 'TODOIST_API_TOKEN',
   // 2025-10 이후 구형 v8 엔드포인트가 완전 종료되어 /api/v1 기준으로 통일
   TODOIST_API_BASE_URL: 'https://api.todoist.com/api/v1',
+  TODOIST_APP_TASK_URL_BASE: 'https://app.todoist.com/app/task/',
   MILESTONE_HEADERS: ['project_code', 'section', 'step_name', 'plan_date', 'done_date', 'manager'],
   SYNC_HEADERS: ['todoist_task_id', 'sync_status', 'last_synced_at', 'last_error'],
   STATUS: {
@@ -28,6 +29,8 @@ var TODOIST_SYNC = {
     SKIP_KEYWORDS: ['반영', '동기화완료', '투두이시트완료', 'todoist완료']
   },
   SYNC_SOURCE_COLUMN_INDEX: 12, // L열
+  TASK_UID_COLUMN_INDEX: 13, // M열
+  TASK_LINK_COLUMN_INDEX: 14, // N열
   FULL_SYNC: {
     // Apps Script 실행 시간 제한(약 6분) 전에 안전하게 종료하기 위한 예산
     MAX_RUNTIME_MS: 330000,
