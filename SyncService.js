@@ -316,7 +316,10 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
       sync_status: '',
       last_synced_at: '',
       last_error: '',
-      process_mark: ''
+      process_mark: '',
+      sync_source: '',
+      task_uid: '',
+      todoist_task_link: ''
     };
 
     if (isNew) {
@@ -336,7 +339,7 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   cleanupRemovedMilestoneTodoistTasks_(removedMilestoneRows, baseMilestoneColCount);
 
   var finalRows = keepRows.concat(restoredRows);
-  var writeWidth = Math.max(maxCols, baseMilestoneColCount + 5);
+  var writeWidth = Math.max(maxCols, TODOIST_SYNC.TASK_LINK_COLUMN_INDEX, baseMilestoneColCount + 8);
 
   if (finalRows.length > 0) {
     finalRows = normalizeRowsToWidth_(finalRows, writeWidth);
@@ -453,7 +456,10 @@ function extractMilestoneMeta_(row, baseColCount) {
     sync_status: '',
     last_synced_at: '',
     last_error: '',
-    process_mark: ''
+    process_mark: '',
+    sync_source: '',
+    task_uid: '',
+    todoist_task_link: ''
   };
 
   if (!row || row.length <= normalizedBase) return meta;
@@ -467,7 +473,10 @@ function extractMilestoneMeta_(row, baseColCount) {
   meta.last_synced_at = read(2) || '';
   meta.last_error = read(3) || '';
   meta.process_mark = read(4) || '';
-  meta.hasMeta = !!(meta.todoist_task_id || meta.sync_status || meta.last_synced_at || meta.last_error || meta.process_mark);
+  meta.sync_source = read(5) || '';
+  meta.task_uid = read(6) || '';
+  meta.todoist_task_link = read(7) || '';
+  meta.hasMeta = !!(meta.todoist_task_id || meta.sync_status || meta.last_synced_at || meta.last_error || meta.process_mark || meta.sync_source || meta.task_uid || meta.todoist_task_link);
   return meta;
 }
 
@@ -475,7 +484,7 @@ function applyMilestoneMeta_(row, meta, baseColCount) {
   var output = row.slice();
   var normalizedBase = Math.max(0, Number(baseColCount) || 0);
 
-  while (output.length < normalizedBase + 5) {
+  while (output.length < normalizedBase + 8) {
     output.push('');
   }
 
@@ -484,5 +493,8 @@ function applyMilestoneMeta_(row, meta, baseColCount) {
   output[normalizedBase + 2] = meta.last_synced_at || '';
   output[normalizedBase + 3] = meta.last_error || '';
   output[normalizedBase + 4] = meta.process_mark || '';
+  output[normalizedBase + 5] = meta.sync_source || output[normalizedBase + 5] || '';
+  output[normalizedBase + 6] = meta.task_uid || output[normalizedBase + 6] || '';
+  output[normalizedBase + 7] = meta.todoist_task_link || '';
   return output;
 }

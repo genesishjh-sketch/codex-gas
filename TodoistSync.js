@@ -152,6 +152,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
       try {
         prependSystemCleanupPrefixToTodoistTask_(rowObj.todoist_task_id);
         todoistCloseTask_(rowObj.todoist_task_id);
+        updateTaskLink_(sheet, row, rowObj.todoist_task_id);
         setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, 'Todoist 작업 완료 처리: ' + validate.reason, '');
         setSyncSource_(sheet, row, 'sheet');
         markRowProcessed_(sheet, row, 'Todoist 완료처리');
@@ -162,6 +163,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
     }
 
     setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.SKIPPED, validate.reason, '');
+    if (!rowObj.todoist_task_id) updateTaskLink_(sheet, row, '');
     return;
   }
 
@@ -194,6 +196,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
       var existingTask = findExistingTodoistTaskByUid_(resolvedProjectId, rowObj.task_uid);
       if (existingTask && existingTask.id) {
         updateTaskId_(sheet, row, existingTask.id);
+        updateTaskLink_(sheet, row, existingTask.id);
         rowObj.todoist_task_id = existingTask.id;
       }
     }
@@ -201,6 +204,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
     if (!rowObj.todoist_task_id) {
       result = todoistCreateTask_(payload);
       updateTaskId_(sheet, row, result.id);
+      updateTaskLink_(sheet, row, result.id);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.CREATED, '', '');
       setSyncSource_(sheet, row, 'sheet');
       markRowProcessed_(sheet, row, 'Todoist 동기화완료');
@@ -209,6 +213,7 @@ function syncMilestoneRowByRowNumber_(sheet, row, settings) {
         try { todoistReopenTask_(rowObj.todoist_task_id); } catch (reopenErr) {}
       }
       todoistUpdateTask_(rowObj.todoist_task_id, payload);
+      updateTaskLink_(sheet, row, rowObj.todoist_task_id);
       setSyncResult_(sheet, row, TODOIST_SYNC.STATUS.UPDATED, '', '');
       setSyncSource_(sheet, row, 'sheet');
       markRowProcessed_(sheet, row, 'Todoist 업데이트완료');
@@ -386,7 +391,13 @@ function appendLabelsIfEnabled_(payload, settings, context) {
 
 function ensureMilestonesSyncColumns_(sheet) {
   var expected = TODOIST_SYNC.MILESTONE_HEADERS.concat(TODOIST_SYNC.SYNC_HEADERS);
-  var requiredCols = Math.max(expected.length, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX, INTERIOR_TASK_UID.MILESTONE_UID_COL);
+  var requiredCols = Math.max(
+    expected.length,
+    TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX,
+    TODOIST_SYNC.SYNC_SOURCE_COLUMN_INDEX,
+    TODOIST_SYNC.TASK_UID_COLUMN_INDEX,
+    TODOIST_SYNC.TASK_LINK_COLUMN_INDEX
+  );
   if (sheet.getMaxColumns() < requiredCols) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredCols - sheet.getMaxColumns());
   }
@@ -403,9 +414,10 @@ function ensureMilestonesSyncColumns_(sheet) {
 
   sheet.getRange(1, TODOIST_SYNC.PROCESS_MARK.COLUMN_INDEX).setValue('process_mark');
   sheet.getRange(1, TODOIST_SYNC.SYNC_SOURCE_COLUMN_INDEX).setValue('sync_source');
-  var uidHeaderCell = sheet.getRange(1, INTERIOR_TASK_UID.MILESTONE_UID_COL);
+  var uidHeaderCell = sheet.getRange(1, TODOIST_SYNC.TASK_UID_COLUMN_INDEX);
   uidHeaderCell.setValue(INTERIOR_TASK_UID.MILESTONE_UID_HEADER_TEXT);
   uidHeaderCell.setNote(INTERIOR_TASK_UID.MILESTONE_UID_WARNING_TEXT);
+  sheet.getRange(1, TODOIST_SYNC.TASK_LINK_COLUMN_INDEX).setValue('todoist_task_link');
 }
 
 function setSyncResult_(sheet, row, status, reason, errorText) {
@@ -414,6 +426,18 @@ function setSyncResult_(sheet, row, status, reason, errorText) {
 
 function updateTaskId_(sheet, row, taskId) {
   sheet.getRange(row, 7).setValue(taskId ? String(taskId) : '');
+}
+
+function updateTaskLink_(sheet, row, taskId) {
+  var normalizedTaskId = (taskId || '').toString().trim();
+  var cell = sheet.getRange(row, TODOIST_SYNC.TASK_LINK_COLUMN_INDEX);
+  if (!normalizedTaskId) {
+    cell.clearContent();
+    return;
+  }
+
+  var taskUrl = TODOIST_SYNC.TODOIST_APP_TASK_URL_BASE + encodeURIComponent(normalizedTaskId);
+  cell.setFormula('=HYPERLINK("' + taskUrl + '","열기")');
 }
 
 function setSyncSource_(sheet, row, source) {
