@@ -12,6 +12,7 @@ function setupTodoistMilestonesSync() {
   var tokenInfo = getTodoistApiToken_();
   var message = [
     'Todoist 동기화 설치 완료',
+    '- settings 기존 값/매핑: 보존(비파괴 정렬)',
     '- 대상 시트: ' + target.getName(),
     '- 실시간 onEdit 트리거: 사용안함(K열 큐 기반)',
     '- API 토큰: ' + (tokenInfo.token ? '설정됨 (' + (tokenInfo.source === 'settings' ? 'settings 시트' : 'Script Properties') + ')' : '미설정 (settings 시트 todoist_api_token 또는 Script Properties TODOIST_API_TOKEN 설정 필요)')

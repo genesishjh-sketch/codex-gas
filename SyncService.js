@@ -12,6 +12,13 @@ function runInteriorDbSync() {
     notifyUiOnError: true,
     verbose: true
   });
+
+  if (typeof runTodoistPendingQueueSync === 'function') {
+    runTodoistPendingQueueSync();
+  }
+  if (typeof scheduleTodoistPendingQueueSyncFallback_ === 'function') {
+    scheduleTodoistPendingQueueSyncFallback_();
+  }
 }
 
 function runInteriorDbSyncRealtimeByEdit(e) {
