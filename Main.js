@@ -8,7 +8,8 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
 
   ui.createMenu('🚀 스마트 통합 관리')
-    .addItem('🛠️ 현장 초기 세팅 (주소+폴더+파일+연락처)', 'runMasterSync')
+    .addItem('🔨 현장 초기 세팅 (주소+폴더+파일+연락처)', 'runMasterSync')
+    .addItem('🧩 ClickUp 동기화만 실행 (현재 블록)', 'runClickUpSyncOnly')
     .addSeparator()
     .addItem('🟡 드라이브 체크 (진행만 / 열 때)', 'runDriveCheckActive')
     .addItem('🟡 드라이브 체크 (전체 스캔)', 'runDriveCheckAll')
@@ -34,10 +35,56 @@ function onOpen() {
 
   // 단순 트리거(onOpen)는 30초 제한이라 무거운 DB 동기화를 실행하지 않습니다.
   // (자동 동기화는 메뉴의 '매일 오전 6시 자동 동기화 설치' 사용 권장)
+
+  // ClickUp 설정 탭은 없으면 생성(기존 값은 보존)
+  try {
+    if (typeof ensureClickUpSettingsSheet_ === 'function') ensureClickUpSettingsSheet_();
+  } catch (e3) {}
+}
+
+/**
+ * ClickUp 동기화만 단독 실행.
+ * - 기존 현장 초기 세팅을 실행하지 않는다.
+ * - 현재 선택된 셀의 블록(또는 fallback 규칙) 1개만 처리한다.
+ */
+function runClickUpSyncOnly() {
+  try {
+    runClickUpCreateForNewBlock_({
+      ok: true,
+      // BlockResolver가 activeRange fallback을 사용하도록 빈 배열로 전달
+      pendingRows: [],
+      completedRows: []
+    });
+  } catch (e) {
+    SpreadsheetApp.getUi().alert(
+      '❌ ClickUp 동기화 실행 실패\n' + (e && e.message ? e.message : e)
+    );
+  }
 }
 
 /** 마스터 세팅(팝업 1회) */
 function runMasterSync() {
+  var summary = runMasterSyncCore_();
+  if (!summary.ok) return;
+
+  // 기존 로직을 먼저 끝낸 뒤, 방금 생성된(혹은 처리된) 블록 1개만 ClickUp 생성 시도
+  try {
+    runClickUpCreateForNewBlock_(summary);
+  } catch (e) {
+    // 기존 마스터 세팅은 성공했으므로 여기서는 안내만 표시
+    SpreadsheetApp.getUi().alert(
+      "⚠️ ClickUp 생성 단계에서 오류가 발생했습니다.\n" +
+      (e && e.message ? e.message : e)
+    );
+  }
+}
+
+/**
+ * 기존 마스터 세팅 로직 본체.
+ * - 기존 동작을 보존하기 위해 기존 코드를 코어 함수로 분리했다.
+ * - 반환값은 후속 ClickUp 단일 블록 처리에서 사용된다.
+ */
+function runMasterSyncCore_() {
   var ui = SpreadsheetApp.getUi();
 
   // (주소 변환을 쓰는 경우만 체크)
@@ -45,21 +92,21 @@ function runMasterSync() {
     var k = (KAKAO_API_KEY || "").toString();
     if (!k || k.indexOf("여기에") >= 0) {
       ui.alert("⚠️ 설정 오류\nKAKAO_API_KEY를 확인해주세요!");
-      return;
+      return { ok: false, message: "kakao_key_invalid" };
     }
   }
 
   var renumberResult = renumberByBalanceDateCore_({ silent: true });
   if (!renumberResult.ok) {
     ui.alert("❌ [1단계] 잔금일 기준 번호 재정렬 실패\n" + (renumberResult.message || "알 수 없는 오류"));
-    return;
+    return { ok: false, message: renumberResult.message || "renumber_failed" };
   }
 
   var sheet = getMainSheet_();
   var pendingRows = collectMasterSyncPendingRows_(sheet);
   if (pendingRows.length === 0) {
     ui.alert("ℹ️ 신규 세팅 대상이 없습니다.\n(AA 완료마커가 없는 프로젝트만 처리됩니다.)");
-    return;
+    return { ok: true, skipped: true, pendingRows: [], completedRows: [], sheetName: sheet.getName() };
   }
 
   var targetRowsMap = {};
@@ -103,6 +150,15 @@ function runMasterSync() {
 
   // 끝나고 진행만 드라이브 체크
   runDriveCheckActive(true);
+
+  return {
+    ok: true,
+    skipped: false,
+    hasContinuation: hasContinuation,
+    pendingRows: pendingRows.slice(),
+    completedRows: hasContinuation ? [] : pendingRows.slice(),
+    sheetName: sheet.getName()
+  };
 }
 
 function collectMasterSyncPendingRows_(sheet) {
