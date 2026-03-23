@@ -60,7 +60,7 @@ function runClickUpCreateForNewBlock_(summary) {
   var subtaskStatus = stringValue_(settings.target.CLICKUP_DEFAULT_SUBTASK_STATUS);
   var completedStatus = stringValue_(settings.target.CLICKUP_COMPLETED_STATUS);
 
-  var parentTitle = buildProjectTitleFallback_(projectData, projectUniqueId);
+  var parentTitle = buildProjectTitleFallback_(projectData, projectUniqueId, settings);
   var parentDesc = buildParentTaskDescription_(projectData, projectUniqueId);
 
   try {

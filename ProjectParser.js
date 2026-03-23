@@ -40,6 +40,7 @@ function parseProjectBlock_(sheet, startRow, settings) {
     contractDate: vv('D', 4),
     balanceDate: vv('D', 5),
     listDeadline: vv('D', 6),
+    measureDate: vv('H', 1),
     address: addr,
     password: compressSpace_(gv('F', 3)),
     addressLink: compressSpace_(gv('F', 4)),
@@ -53,10 +54,24 @@ function parseProjectBlock_(sheet, startRow, settings) {
   };
 }
 
-function buildProjectTitleFallback_(projectData, projectUniqueId) {
+function buildProjectTitleFallback_(projectData, projectUniqueId, settings) {
+  var includeProjectId = String(
+    settings && settings.target && settings.target.CLICKUP_PARENT_TITLE_INCLUDE_PROJECT_ID || 'FALSE'
+  ).toUpperCase() === 'TRUE';
+
   var location = parseFirstParenText_(projectData.projectTitle) || parseFirstParenText_(projectData.address) || '현장';
-  var title = projectData.projectTitle || (projectData.customerName + '(' + location + ')');
-  return '[' + projectUniqueId + '] ' + title;
+  var baseTitle = projectData.projectTitle || (projectData.customerName + '(' + location + ')');
+
+  var rightParts = [];
+  if (projectData.customerName) rightParts.push(projectData.customerName);
+  if (projectData.measureDate) rightParts.push('실측 ' + formatDateYmd_(projectData.measureDate, projectData.timeZone));
+  if (projectData.customerPhone) rightParts.push(projectData.customerPhone);
+  if (projectData.address) rightParts.push(projectData.address);
+
+  var name = baseTitle;
+  if (rightParts.length > 0) name += ' | ' + rightParts.join(' | ');
+  if (includeProjectId) name = '[' + projectUniqueId + '] ' + name;
+  return name;
 }
 
 function buildParentTaskDescription_(projectData, projectUniqueId) {

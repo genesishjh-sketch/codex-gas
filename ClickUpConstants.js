@@ -36,7 +36,8 @@ var CLICKUP_SETTINGS = {
     ['CLICKUP_DEFAULT_PARENT_STATUS', '', '부모 Task 기본 상태명 (선택)'],
     ['CLICKUP_DEFAULT_SUBTASK_STATUS', '', 'Subtask 기본 상태명 (선택)'],
     ['CLICKUP_COMPLETED_STATUS', '', '완료 처리 상태명 (선택)'],
-    ['CLICKUP_ENABLE_DUE_DATE', 'TRUE', 'due date 활성화 TRUE/FALSE']
+    ['CLICKUP_ENABLE_DUE_DATE', 'TRUE', 'due date 활성화 TRUE/FALSE'],
+    ['CLICKUP_PARENT_TITLE_INCLUDE_PROJECT_ID', 'FALSE', '부모 Task 제목에 project_unique_id 포함 여부(TRUE/FALSE)']
   ],
 
   ITEM_MAP_HEADERS: [
