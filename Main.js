@@ -9,6 +9,7 @@ function onOpen() {
 
   ui.createMenu('🚀 스마트 통합 관리')
     .addItem('🔨 현장 초기 세팅 (주소+폴더+파일+연락처)', 'runMasterSync')
+    .addItem('🧩 ClickUp 동기화만 실행 (현재 블록)', 'runClickUpSyncOnly')
     .addSeparator()
     .addItem('🟡 드라이브 체크 (진행만 / 열 때)', 'runDriveCheckActive')
     .addItem('🟡 드라이브 체크 (전체 스캔)', 'runDriveCheckAll')
@@ -39,6 +40,26 @@ function onOpen() {
   try {
     if (typeof ensureClickUpSettingsSheet_ === 'function') ensureClickUpSettingsSheet_();
   } catch (e3) {}
+}
+
+/**
+ * ClickUp 동기화만 단독 실행.
+ * - 기존 현장 초기 세팅을 실행하지 않는다.
+ * - 현재 선택된 셀의 블록(또는 fallback 규칙) 1개만 처리한다.
+ */
+function runClickUpSyncOnly() {
+  try {
+    runClickUpCreateForNewBlock_({
+      ok: true,
+      // BlockResolver가 activeRange fallback을 사용하도록 빈 배열로 전달
+      pendingRows: [],
+      completedRows: []
+    });
+  } catch (e) {
+    SpreadsheetApp.getUi().alert(
+      '❌ ClickUp 동기화 실행 실패\n' + (e && e.message ? e.message : e)
+    );
+  }
 }
 
 /** 마스터 세팅(팝업 1회) */
