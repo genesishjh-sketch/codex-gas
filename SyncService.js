@@ -12,13 +12,6 @@ function runInteriorDbSync() {
     notifyUiOnError: true,
     verbose: true
   });
-
-  if (typeof runTodoistPendingQueueSync === 'function') {
-    runTodoistPendingQueueSync();
-  }
-  if (typeof scheduleTodoistPendingQueueSyncFallback_ === 'function') {
-    scheduleTodoistPendingQueueSyncFallback_();
-  }
 }
 
 function runInteriorDbSyncRealtimeByEdit(e) {
@@ -34,13 +27,6 @@ function runInteriorDbSyncRealtimeByEdit(e) {
       notifyUiOnError: false,
       verbose: false
     });
-
-    if (typeof runTodoistPendingQueueSync === 'function') {
-      runTodoistPendingQueueSync();
-    }
-    if (typeof scheduleTodoistPendingQueueSyncFallback_ === 'function') {
-      scheduleTodoistPendingQueueSyncFallback_();
-    }
   } catch (err) {
     console.error('실시간 부분 동기화 실패: ' + (err && err.message ? err.message : err));
     throw err;
@@ -312,14 +298,14 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
 
     var meta = preservedMetaByKey[key] || {
       hasMeta: false,
-      todoist_task_id: '',
+      external_task_id: '',
       sync_status: '',
       last_synced_at: '',
       last_error: '',
       process_mark: '',
       sync_source: '',
       task_uid: '',
-      todoist_task_link: ''
+      external_task_link: ''
     };
 
     if (isNew) {
@@ -336,10 +322,10 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
     removedMilestoneRows.push(existingRowByKey[key]);
   });
 
-  cleanupRemovedMilestoneTodoistTasks_(removedMilestoneRows, baseMilestoneColCount);
+  cleanupRemovedMilestoneTasks_(removedMilestoneRows, baseMilestoneColCount);
 
   var finalRows = keepRows.concat(restoredRows);
-  var writeWidth = Math.max(maxCols, TODOIST_SYNC.TASK_LINK_COLUMN_INDEX, baseMilestoneColCount + 8);
+  var writeWidth = Math.max(maxCols, baseMilestoneColCount + 8);
 
   if (finalRows.length > 0) {
     finalRows = normalizeRowsToWidth_(finalRows, writeWidth);
@@ -354,23 +340,23 @@ function replaceMilestonesByProjectCodes_(milestonesSheet, projectCodes, newRows
   }
 }
 
-function cleanupRemovedMilestoneTodoistTasks_(removedRows, baseMilestoneColCount) {
+function cleanupRemovedMilestoneTasks_(removedRows, baseMilestoneColCount) {
   if (!removedRows || removedRows.length === 0) return;
-  if (typeof todoistCloseTask_ !== 'function') return;
+  if (typeof closeExternalMilestoneTask_ !== 'function') return;
 
   removedRows.forEach(function(row) {
     try {
       var meta = extractMilestoneMeta_(row, baseMilestoneColCount);
-      var taskId = (meta.todoist_task_id || '').toString().trim();
+      var taskId = (meta.external_task_id || '').toString().trim();
       if (!taskId) return;
 
-      if (typeof prependSystemCleanupPrefixToTodoistTask_ === 'function') {
-        prependSystemCleanupPrefixToTodoistTask_(taskId);
+      if (typeof prependSystemCleanupPrefixToExternalTask_ === 'function') {
+        prependSystemCleanupPrefixToExternalTask_(taskId);
       }
 
-      todoistCloseTask_(taskId);
+      closeExternalMilestoneTask_(taskId);
     } catch (err) {
-      Logger.log('[TodoistSync] removed milestone close failed: %s', err && err.message ? err.message : err);
+      Logger.log('[MilestoneSync] removed milestone close failed: %s', err && err.message ? err.message : err);
     }
   });
 }
@@ -452,14 +438,14 @@ function extractMilestoneMeta_(row, baseColCount) {
   var normalizedBase = Math.max(0, Number(baseColCount) || 0);
   var meta = {
     hasMeta: false,
-    todoist_task_id: '',
+    external_task_id: '',
     sync_status: '',
     last_synced_at: '',
     last_error: '',
     process_mark: '',
     sync_source: '',
     task_uid: '',
-    todoist_task_link: ''
+    external_task_link: ''
   };
 
   if (!row || row.length <= normalizedBase) return meta;
@@ -468,15 +454,15 @@ function extractMilestoneMeta_(row, baseColCount) {
     return row[normalizedBase + offset];
   }
 
-  meta.todoist_task_id = read(0) || '';
+  meta.external_task_id = read(0) || '';
   meta.sync_status = read(1) || '';
   meta.last_synced_at = read(2) || '';
   meta.last_error = read(3) || '';
   meta.process_mark = read(4) || '';
   meta.sync_source = read(5) || '';
   meta.task_uid = read(6) || '';
-  meta.todoist_task_link = read(7) || '';
-  meta.hasMeta = !!(meta.todoist_task_id || meta.sync_status || meta.last_synced_at || meta.last_error || meta.process_mark || meta.sync_source || meta.task_uid || meta.todoist_task_link);
+  meta.external_task_link = read(7) || '';
+  meta.hasMeta = !!(meta.external_task_id || meta.sync_status || meta.last_synced_at || meta.last_error || meta.process_mark || meta.sync_source || meta.task_uid || meta.external_task_link);
   return meta;
 }
 
@@ -488,13 +474,13 @@ function applyMilestoneMeta_(row, meta, baseColCount) {
     output.push('');
   }
 
-  output[normalizedBase] = meta.todoist_task_id || '';
+  output[normalizedBase] = meta.external_task_id || '';
   output[normalizedBase + 1] = meta.sync_status || '';
   output[normalizedBase + 2] = meta.last_synced_at || '';
   output[normalizedBase + 3] = meta.last_error || '';
   output[normalizedBase + 4] = meta.process_mark || '';
   output[normalizedBase + 5] = meta.sync_source || output[normalizedBase + 5] || '';
   output[normalizedBase + 6] = meta.task_uid || output[normalizedBase + 6] || '';
-  output[normalizedBase + 7] = meta.todoist_task_link || '';
+  output[normalizedBase + 7] = meta.external_task_link || '';
   return output;
 }
