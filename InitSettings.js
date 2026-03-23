@@ -42,6 +42,9 @@ function getClickUpSettings_() {
     itemMap: itemMap
   };
 
+  // LIST_ID는 URL 입력을 허용하고 내부적으로 정규화해서 사용
+  cfg.target.CLICKUP_LIST_ID = normalizeClickUpListId_(cfg.target.CLICKUP_LIST_ID);
+
   cache.put('CLICKUP_SETTINGS_CACHE_V1', JSON.stringify(cfg), 120);
   return cfg;
 }
@@ -53,7 +56,11 @@ function clearClickUpSettingsCache_() {
 function validateClickUpRequiredSettings_(settings) {
   var missing = [];
   if (!settings || !settings.auth || !stringValue_(settings.auth.CLICKUP_API_TOKEN)) missing.push('CLICKUP_API_TOKEN');
-  if (!settings || !settings.target || !stringValue_(settings.target.CLICKUP_LIST_ID)) missing.push('CLICKUP_LIST_ID');
+  if (!settings || !settings.target || !stringValue_(settings.target.CLICKUP_LIST_ID)) {
+    missing.push('CLICKUP_LIST_ID');
+  } else if (!/^\d+$/.test(stringValue_(settings.target.CLICKUP_LIST_ID))) {
+    missing.push('CLICKUP_LIST_ID(숫자 ID 또는 List URL 입력)');
+  }
   return missing;
 }
 

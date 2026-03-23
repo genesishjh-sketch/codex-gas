@@ -113,6 +113,7 @@ function runClickUpCreateForNewBlock_(summary) {
       message: '부모 Task + Subtask 10개 생성 완료'
     });
   } catch (e) {
+    var errMsg = e && e.message ? e.message : String(e);
     writeClickUpStatus_(sheet, repRow, 'ERROR', settings, {});
     logSyncEvent_({
       action: 'CLICKUP_CREATE',
@@ -122,8 +123,17 @@ function runClickUpCreateForNewBlock_(summary) {
       projectUniqueId: projectUniqueId,
       clickupTaskId: '',
       status: 'ERROR',
-      message: e && e.message ? e.message : String(e)
+      message: errMsg
     });
-    ui.alert('❌ ClickUp 생성 실패\n' + (e && e.message ? e.message : e));
+    if (errMsg.indexOf('List ID invalid') >= 0) {
+      ui.alert(
+        '❌ ClickUp 생성 실패\n' +
+        'CLICKUP_LIST_ID가 올바르지 않습니다.\n' +
+        'clickup settings 시트의 CLICKUP_LIST_ID에 숫자 ID 또는 List URL을 넣어주세요.\n' +
+        '(현재값: ' + stringValue_(settings.target.CLICKUP_LIST_ID) + ')'
+      );
+    } else {
+      ui.alert('❌ ClickUp 생성 실패\n' + errMsg);
+    }
   }
 }

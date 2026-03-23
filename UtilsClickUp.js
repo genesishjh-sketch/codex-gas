@@ -92,3 +92,26 @@ function shortHash6_(text) {
   }).join('').toUpperCase();
   return hex.substring(0, 6);
 }
+
+/**
+ * ClickUp LIST_ID 정규화
+ * - 숫자 ID 그대로 입력: 그대로 반환
+ * - URL 입력: /v/li/{id} 또는 /l/{id} 패턴에서 추출
+ */
+function normalizeClickUpListId_(raw) {
+  var s = stringValue_(raw);
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return s;
+
+  var m = s.match(/\/v\/li\/(\d+)/i);
+  if (m && m[1]) return m[1];
+
+  m = s.match(/\/l\/(\d+)/i);
+  if (m && m[1]) return m[1];
+
+  // URL 쿼리/기타 문자열에서 숫자만 추출 시도(길이 5 이상)
+  m = s.match(/(\d{5,})/);
+  if (m && m[1]) return m[1];
+
+  return s;
+}
