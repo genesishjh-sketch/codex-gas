@@ -193,7 +193,7 @@ function runDriveAndContactInspection() {
     SpreadsheetApp.getUi().alert("⚠️ 드라이브 및 연락처 검사 함수가 없습니다.");
     return;
   }
-  inspectDriveAndContacts(false, { includeAll: false, forceRefresh: false });
+  inspectDriveAndContacts(false, { includeAll: true, forceRefresh: false });
 }
 
 /** 드라이브 체크: 진행만(열 때) */
