@@ -306,17 +306,33 @@ function splitAddressExtra_(raw) {
   s = s.replace(/\s+/g, " ").trim();
   if (!s) return { base: "", extra: "" };
 
-  // 첫 지번(숫자-숫자)까지만 base
-  var m = s.match(/^(.+?\d+(?:-\d+)?)(.*)$/);
+  // 도로명: "학동로4길45", "학동로4길 45" 모두 "학동로4길 45"로 검색.
+  // "원효로1가 51-17" 같은 지번 법정동은 건물번호 뒤에 공백/끝이 없어 이 규칙에서 제외된다.
+  var road = s.match(/^(.+(?:대로|로|길))\s*(\d+(?:-\d+)?)(?:\s+(.*)|$)/);
+  if (road) {
+    return {
+      base: (String(road[1] || "").trim() + " " + String(road[2] || "").trim()).replace(/\s+/g, " ").trim(),
+      extra: cleanAddressExtra_(road[3] || "")
+    };
+  }
+
+  // 지번: "논현동 162", "용산동2가 5-1612"처럼 동/가/리/읍/면 뒤의 지번까지 검색.
+  var unit = "(?:[가-힣A-Za-z]+동\\d*가?|[가-힣A-Za-z]+\\d*가|[가-힣A-Za-z]+리|[가-힣A-Za-z]+읍|[가-힣A-Za-z]+면)";
+  var lot = new RegExp("^(.+?" + unit + "\\s*\\d+(?:-\\d+)?)(?:\\s+(.*)|$)");
+  var m = s.match(lot);
+  if (!m) {
+    m = s.match(/^(.+?\d+(?:-\d+)?)(.*)$/);
+  }
   if (!m) return { base: s, extra: "" };
 
   var base = String(m[1] || "").trim();
-  var rest = String(m[2] || "").trim();
+  var rest = cleanAddressExtra_(m[2] || "");
 
-  // 괄호 덩어리 제거 → extra만 남김
-  rest = rest.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  return { base: base.replace(/\s+/g, " ").trim(), extra: rest };
+}
 
-  return { base: base, extra: rest };
+function cleanAddressExtra_(value) {
+  return String(value || "").replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** 카카오 결과 정리용: 주소 앞쪽 광역단위 제거 */
