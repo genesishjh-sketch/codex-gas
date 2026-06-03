@@ -142,6 +142,7 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
   var urls = [];
   var hasAnyFiles = false;
   var usedCache = false;
+  var skippedYellow = false;
   var errors = [];
 
   for (var i = 0; i < folderCellInfos.length; i++) {
@@ -150,6 +151,13 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
     var folderUrl = folderCellInfo.url || "";
     var prevBg = urlCell.getBackground();
     urls.push(folderUrl);
+
+    if (!forceRefresh && isMarkedHasFilesBackground_(prevBg)) {
+      hasAnyFiles = true;
+      skippedYellow = true;
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_YELLOW", "노란색 표시 유지"]);
+      continue;
+    }
 
     if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
       urlCell.setBackground("#ffffff");
@@ -203,9 +211,14 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
 
   return {
     text: hasAnyFiles ? "YES" : "NO",
-    detail: usedCache ? "캐시 사용" : "새로 검사",
+    detail: skippedYellow ? "노란색 셀 검사 생략" : (usedCache ? "캐시 사용" : "새로 검사"),
     url: urls.filter(function(v) { return !!v; }).join("\n")
   };
+}
+
+function isMarkedHasFilesBackground_(color) {
+  var normalized = String(color || "").trim().toLowerCase();
+  return normalized === "#ffff00" || normalized === "yellow";
 }
 
 /** === 내부: 드라이브 체크 본체 === */
@@ -274,6 +287,12 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
 
       // 에러 시 “기존색 유지” 위해 현재 배경 확보
       var prevBg = urlCell.getBackground();
+
+      if (!forceRefresh && isMarkedHasFilesBackground_(prevBg)) {
+        skipped++;
+        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_YELLOW", "노란색 표시 유지"]);
+        continue;
+      }
 
       // URL 없으면 흰색 처리
       if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
