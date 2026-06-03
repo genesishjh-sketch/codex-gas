@@ -81,6 +81,7 @@ const CONFIG = {
 
   /** ✅ 드라이브 체크(캐시/표시) */
   DRIVE_LOG_SHEET: "드라이브_check_log",
+  DRIVE_CHECK_SHEET_NAMES: ["통합관리시트", "완료"],
   DRIVE_CACHE_HOURS: 6,
   DRIVE_MARK_COL: 19, // S열(표시용 색칠)
 

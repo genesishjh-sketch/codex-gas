@@ -14,21 +14,43 @@ function checkFolderFilesColor(isSilent, options) {
   return driveCheckUpdate_(includeAll, forceRefresh, !!isSilent);
 }
 
+function getDriveCheckSheets_(includeAll) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var configuredNames = includeAll && CONFIG && CONFIG.DRIVE_CHECK_SHEET_NAMES && CONFIG.DRIVE_CHECK_SHEET_NAMES.length
+    ? CONFIG.DRIVE_CHECK_SHEET_NAMES
+    : [CONFIG.SHEET_NAME, "완료"];
+  if (!includeAll) configuredNames = [CONFIG.SHEET_NAME];
+  var seen = {};
+  var sheets = [];
+
+  for (var i = 0; i < configuredNames.length; i++) {
+    var name = String(configuredNames[i] || "").trim();
+    if (!name || seen[name]) continue;
+    seen[name] = true;
+
+    var sheet = ss.getSheetByName(name);
+    if (sheet) sheets.push(sheet);
+  }
+
+  if (sheets.length === 0) sheets.push(getMainSheet_());
+  return sheets;
+}
+
 function inspectDriveAndContacts(isSilent, options) {
   options = options || {};
   var includeAll = !!options.includeAll;
   var forceRefresh = !!options.forceRefresh;
-  var sheet = getMainSheet_();
-  var blockHeight = getBlockHeight_(sheet);
-  var lastRow = sheet.getLastRow();
-  if (lastRow < getStartRow_()) return { checked: 0, driveErrors: 0, contactErrors: 0 };
-
-  var reportSheet = ensureSheet_("진짜있나", [
-    "CHECKED_AT", "BLOCK_ROW", "PROJECT_NAME", "STATUS", "PHONE",
+  var sheets = getDriveCheckSheets_(includeAll);
+  var reportHeaders = [
+    "CHECKED_AT", "SHEET_NAME", "BLOCK_ROW", "PROJECT_NAME", "STATUS", "PHONE",
     "CONTACT_EXISTS", "DRIVE_HAS_FILES", "DRIVE_URL", "DETAILS"
-  ]);
+  ];
+
+  var reportSheet = ensureSheet_("진짜있나", reportHeaders);
+  reportSheet.getRange(1, 1, 1, reportHeaders.length).setValues([reportHeaders]).setFontWeight("bold");
+  reportSheet.setFrozenRows(1);
   if (reportSheet.getLastRow() > 1) {
-    reportSheet.getRange(2, 1, reportSheet.getLastRow() - 1, 9).clearContent();
+    reportSheet.getRange(2, 1, reportSheet.getLastRow() - 1, reportHeaders.length).clearContent();
   }
 
   var logName = (CONFIG && CONFIG.DRIVE_LOG_SHEET) ? CONFIG.DRIVE_LOG_SHEET : "드라이브_check_log";
@@ -47,47 +69,56 @@ function inspectDriveAndContacts(isSilent, options) {
   var skipped = 0;
   var driveErrors = 0;
   var contactErrors = 0;
-  var stopCtl = makeStopController_();
 
-  for (var r = getStartRow_(); r <= lastRow; r += blockHeight) {
-    if (stopCtl.check(sheet, r)) break;
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var sheetName = sheet.getName();
+    var blockHeight = getBlockHeight_(sheet);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < getStartRow_()) continue;
 
-    var projectName = findProjectNameInRow_(sheet, r);
-    if (!isValidName(projectName)) continue;
+    var stopCtl = makeStopController_();
+    for (var r = getStartRow_(); r <= lastRow; r += blockHeight) {
+      if (stopCtl.check(sheet, r)) break;
 
-    var status = findStatusInBlock_(sheet, r);
-    if (!includeAll && isClosedBlock_(sheet, r)) {
-      skipped++;
-      continue;
+      var projectName = findProjectNameInRow_(sheet, r);
+      if (!isValidName(projectName)) continue;
+
+      var status = findStatusInBlock_(sheet, r);
+      if (!includeAll && isClosedBlock_(sheet, r)) {
+        skipped++;
+        continue;
+      }
+
+      var contactInfo = (typeof getContactBlockInfo_ === "function")
+        ? getContactBlockInfo_(sheet, r, blockHeight, projectName)
+        : { phone: "", normalized: "" };
+      var phone = contactInfo.normalized || contactInfo.phone || "";
+      var contactResult = inspectContactExists_(phone, contactsState);
+      if (contactResult.error) contactErrors++;
+
+      var driveResult = inspectDriveForBlock_(sheet, r, status, forceRefresh, cacheMap, logSh, driveLogRows, runId, sheetName);
+      if (driveResult.error) driveErrors++;
+
+      rows.push([
+        new Date(),
+        sheetName,
+        r,
+        projectName,
+        status || "",
+        phone,
+        contactResult.text,
+        driveResult.text,
+        driveResult.url || "",
+        [contactResult.detail, driveResult.detail].filter(function(v) { return !!v; }).join(" / ")
+      ]);
+      checked++;
     }
-
-    var contactInfo = (typeof getContactBlockInfo_ === "function")
-      ? getContactBlockInfo_(sheet, r, blockHeight, projectName)
-      : { phone: "", normalized: "" };
-    var phone = contactInfo.normalized || contactInfo.phone || "";
-    var contactResult = inspectContactExists_(phone, contactsState);
-    if (contactResult.error) contactErrors++;
-
-    var driveResult = inspectDriveForBlock_(sheet, r, status, forceRefresh, cacheMap, logSh, driveLogRows, runId);
-    if (driveResult.error) driveErrors++;
-
-    rows.push([
-      new Date(),
-      r,
-      projectName,
-      status || "",
-      phone,
-      contactResult.text,
-      driveResult.text,
-      driveResult.url || "",
-      [contactResult.detail, driveResult.detail].filter(function(v) { return !!v; }).join(" / ")
-    ]);
-    checked++;
   }
 
   if (rows.length > 0) {
     reportSheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
-    reportSheet.autoResizeColumns(1, 9);
+    reportSheet.autoResizeColumns(1, reportHeaders.length);
   }
   if (driveLogRows.length > 0) appendLogRows_(runLogSh, driveLogRows);
 
@@ -132,10 +163,14 @@ function inspectContactExists_(phone, contactsState) {
   }
 }
 
-function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cacheMap, logSh, driveLogRows, runId) {
+function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cacheMap, logSh, driveLogRows, runId, sheetName) {
+  sheetName = sheetName || sheet.getName();
+  var withSheet = function(detail) {
+    return sheetName + " / " + detail;
+  };
   var folderCellInfos = findFolderUrlCells_(sheet, blockStartRow);
   if (!folderCellInfos || folderCellInfos.length === 0) {
-    driveLogRows.push([runId, new Date(), blockStartRow, status || "", "", "SKIP_NO_URL", "R/S에서 링크를 찾지 못함"]);
+    driveLogRows.push([runId, new Date(), blockStartRow, status || "", "", "SKIP_NO_URL", withSheet("R/S에서 링크를 찾지 못함")]);
     return { text: "NO_URL", detail: "드라이브 URL 없음", url: "" };
   }
 
@@ -155,20 +190,20 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
     if (!forceRefresh && isMarkedHasFilesBackground_(prevBg)) {
       hasAnyFiles = true;
       skippedYellow = true;
-      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_YELLOW", "노란색 표시 유지"]);
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_YELLOW", withSheet("노란색 표시 유지")]);
       continue;
     }
 
     if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
       urlCell.setBackground("#ffffff");
-      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_BAD_URL", "drive URL 아님"]);
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_BAD_URL", withSheet("drive URL 아님")]);
       continue;
     }
 
     var folderId = extractIdFromUrl(folderUrl);
     if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
       urlCell.setBackground("#ffffff");
-      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_NO_ID", "폴더 ID 추출 실패"]);
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_NO_ID", withSheet("폴더 ID 추출 실패")]);
       continue;
     }
 
@@ -184,6 +219,8 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
         hasFiles = folderHasAnyFilesDeep_(folderId, 2);
         if (cached) {
           logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
+          cached.has = hasFiles;
+          cached.at = new Date();
         } else {
           logSh.appendRow([folderId, hasFiles, new Date()]);
           cacheMap[folderId] = { row: logSh.getLastRow(), has: hasFiles, at: new Date() };
@@ -192,11 +229,11 @@ function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cache
 
       if (hasFiles) hasAnyFiles = true;
       urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
-      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "UPDATED", (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "UPDATED", withSheet((hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source)]);
     } catch (e) {
       urlCell.setBackground(prevBg);
       errors.push(e && e.message ? e.message : String(e));
-      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "ERROR", String(e && e.message ? e.message : e)]);
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "ERROR", withSheet(String(e && e.message ? e.message : e))]);
     }
   }
 
@@ -235,12 +272,7 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
     }
     return { updated: 0, skipped: 0, errors: 1 };
   }
-  var sheet = getMainSheet_();
-  var blockHeight = getBlockHeight_(sheet);
-  var lastRow = sheet.getLastRow();
-  if (lastRow < getStartRow_()) return;
-
-  var stopCtl = makeStopController_();
+  var sheets = getDriveCheckSheets_(includeAll);
 
   // (옵션) 캐시 시트 사용: 없으면 자동 생성
   var logName = (CONFIG && CONFIG.DRIVE_LOG_SHEET) ? CONFIG.DRIVE_LOG_SHEET : "드라이브_check_log";
@@ -253,92 +285,104 @@ function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
 
   var updated = 0, skipped = 0, errors = 0;
 
-  for (var r = getStartRow_(); r <= lastRow; r += blockHeight) {
-    if (stopCtl.check(sheet, r)) break;
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var sheetName = sheet.getName();
+    var blockHeight = getBlockHeight_(sheet);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < getStartRow_()) continue;
 
-    // 프로젝트 유효성
-    var pname = findProjectNameInRow_(sheet, r);
-    if (!isValidName(pname)) continue;
+    var stopCtl = makeStopController_();
+    for (var r = getStartRow_(); r <= lastRow; r += blockHeight) {
+      if (stopCtl.check(sheet, r)) break;
 
-    // 상태 판별(블록 전체에서 키워드 검색)
-    var status = findStatusInBlock_(sheet, r);
+      // 프로젝트 유효성
+      var pname = findProjectNameInRow_(sheet, r);
+      if (!isValidName(pname)) continue;
 
-    // “열 때(진행만)” 모드면 진행 단계만 검사
-    if (!includeAll) {
-      if (!isActiveStatusForDrive_(status)) {
+      // 상태 판별(블록 전체에서 키워드 검색)
+      var status = findStatusInBlock_(sheet, r);
+
+      // “열 때(진행만)” 모드면 진행 단계만 검사
+      if (!includeAll) {
+        if (!isActiveStatusForDrive_(status)) {
+          skipped++;
+          logRows.push([runId, new Date(), r, status || "", "", "SKIP_STATUS", sheetName + " / 진행만 대상 아님"]);
+          continue;
+        }
+      }
+
+      // 폴더 URL 셀 찾기: 블록 내 S열 링크 전체 수집
+      var folderCellInfos = findFolderUrlCells_(sheet, r);
+      if (!folderCellInfos || folderCellInfos.length === 0) {
         skipped++;
-        logRows.push([runId, new Date(), r, status || "", "", "SKIP_STATUS", "진행만 대상 아님"]);
-        continue;
-      }
-    }
-
-    // 폴더 URL 셀 찾기: 블록 내 S열 링크 전체 수집
-    var folderCellInfos = findFolderUrlCells_(sheet, r);
-    if (!folderCellInfos || folderCellInfos.length === 0) {
-      skipped++;
-      logRows.push([runId, new Date(), r, status || "", "", "SKIP_NO_URL", "R/S에서 링크를 찾지 못함"]);
-      continue;
-    }
-
-    for (var f = 0; f < folderCellInfos.length; f++) {
-      var folderCellInfo = folderCellInfos[f];
-      var urlCell = folderCellInfo.cell;    // 색칠 대상(=S)
-      var folderUrl = folderCellInfo.url;
-
-      // 에러 시 “기존색 유지” 위해 현재 배경 확보
-      var prevBg = urlCell.getBackground();
-
-      if (!forceRefresh && isMarkedHasFilesBackground_(prevBg)) {
-        skipped++;
-        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_YELLOW", "노란색 표시 유지"]);
+        logRows.push([runId, new Date(), r, status || "", "", "SKIP_NO_URL", sheetName + " / R/S에서 링크를 찾지 못함"]);
         continue;
       }
 
-      // URL 없으면 흰색 처리
-      if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
-        urlCell.setBackground("#ffffff");
-        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_BAD_URL", "drive URL 아님"]);
-        continue;
-      }
+      for (var f = 0; f < folderCellInfos.length; f++) {
+        var folderCellInfo = folderCellInfos[f];
+        var urlCell = folderCellInfo.cell;    // 색칠 대상(=S)
+        var folderUrl = folderCellInfo.url;
 
-      var folderId = extractIdFromUrl(folderUrl);
-      if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
-        urlCell.setBackground("#ffffff");
-        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_NO_ID", "폴더 ID 추출 실패"]);
-        continue;
-      }
+        // 에러 시 “기존색 유지” 위해 현재 배경 확보
+        var prevBg = urlCell.getBackground();
 
-      try {
-        var cached = cacheMap[folderId];
-        var hasFiles;
-        var source = "SCAN";
-
-        // 전체스캔(forceRefresh)면 캐시 무시
-        if (!forceRefresh && cached && isCacheFresh_(cached.at)) {
-          hasFiles = !!cached.has;
-          source = "CACHE";
-        } else {
-          // 메인+서브폴더까지 확인 (depth=2)
-          hasFiles = folderHasAnyFilesDeep_(folderId, 2);
-
-          // 캐시 기록
-          if (cached) {
-            logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
-          } else {
-            logSh.appendRow([folderId, hasFiles, new Date()]);
-          }
+        if (!forceRefresh && isMarkedHasFilesBackground_(prevBg)) {
+          skipped++;
+          logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_YELLOW", sheetName + " / 노란색 표시 유지"]);
+          continue;
         }
 
-        logRows.push([runId, new Date(), r, status || "", folderUrl, "UPDATED", (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
-        urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
-        updated++;
+        // URL 없으면 흰색 처리
+        if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
+          urlCell.setBackground("#ffffff");
+          logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_BAD_URL", sheetName + " / drive URL 아님"]);
+          continue;
+        }
 
-      } catch (e) {
-        // 권한/쿼터/일시 오류 → 기존색 유지
-        urlCell.setBackground(prevBg);
-        errors++;
-        logRows.push([runId, new Date(), r, status || "", folderUrl || "", "ERROR", String(e && e.message ? e.message : e)]);
-        continue;
+        var folderId = extractIdFromUrl(folderUrl);
+        if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
+          urlCell.setBackground("#ffffff");
+          logRows.push([runId, new Date(), r, status || "", folderUrl || "", "SKIP_NO_ID", sheetName + " / 폴더 ID 추출 실패"]);
+          continue;
+        }
+
+        try {
+          var cached = cacheMap[folderId];
+          var hasFiles;
+          var source = "SCAN";
+
+          // 전체스캔(forceRefresh)면 캐시 무시
+          if (!forceRefresh && cached && isCacheFresh_(cached.at)) {
+            hasFiles = !!cached.has;
+            source = "CACHE";
+          } else {
+            // 메인+서브폴더까지 확인 (depth=2)
+            hasFiles = folderHasAnyFilesDeep_(folderId, 2);
+
+            // 캐시 기록
+            if (cached) {
+              logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
+              cached.has = hasFiles;
+              cached.at = new Date();
+            } else {
+              logSh.appendRow([folderId, hasFiles, new Date()]);
+              cacheMap[folderId] = { row: logSh.getLastRow(), has: hasFiles, at: new Date() };
+            }
+          }
+
+          logRows.push([runId, new Date(), r, status || "", folderUrl, "UPDATED", sheetName + " / " + (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
+          urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
+          updated++;
+
+        } catch (e) {
+          // 권한/쿼터/일시 오류 → 기존색 유지
+          urlCell.setBackground(prevBg);
+          errors++;
+          logRows.push([runId, new Date(), r, status || "", folderUrl || "", "ERROR", sheetName + " / " + String(e && e.message ? e.message : e)]);
+          continue;
+        }
       }
     }
   }
