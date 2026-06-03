@@ -14,6 +14,200 @@ function checkFolderFilesColor(isSilent, options) {
   return driveCheckUpdate_(includeAll, forceRefresh, !!isSilent);
 }
 
+function inspectDriveAndContacts(isSilent, options) {
+  options = options || {};
+  var includeAll = !!options.includeAll;
+  var forceRefresh = !!options.forceRefresh;
+  var sheet = getMainSheet_();
+  var blockHeight = getBlockHeight_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < getStartRow_()) return { checked: 0, driveErrors: 0, contactErrors: 0 };
+
+  var reportSheet = ensureSheet_("진짜있나", [
+    "CHECKED_AT", "BLOCK_ROW", "PROJECT_NAME", "STATUS", "PHONE",
+    "CONTACT_EXISTS", "DRIVE_HAS_FILES", "DRIVE_URL", "DETAILS"
+  ]);
+  if (reportSheet.getLastRow() > 1) {
+    reportSheet.getRange(2, 1, reportSheet.getLastRow() - 1, 9).clearContent();
+  }
+
+  var logName = (CONFIG && CONFIG.DRIVE_LOG_SHEET) ? CONFIG.DRIVE_LOG_SHEET : "드라이브_check_log";
+  var logSh = ensureSheet_(logName, ["FOLDER_ID", "HAS_FILES", "LAST_CHECK_AT"]);
+  var cacheMap = readDriveCacheMap_(logSh);
+  var runLogSh = ensureSheet_("드라이브_run_log", ["RUN_ID","TIME","BLOCK_ROW","STATUS","URL","RESULT","DETAILS"]);
+  var runId = Utilities.getUuid();
+  var driveLogRows = [];
+
+  var contactsState = (typeof getContactsServiceState_ === "function")
+    ? getContactsServiceState_()
+    : { ok: false, reason: "contact_checker_unavailable" };
+
+  var rows = [];
+  var checked = 0;
+  var skipped = 0;
+  var driveErrors = 0;
+  var contactErrors = 0;
+  var stopCtl = makeStopController_();
+
+  for (var r = getStartRow_(); r <= lastRow; r += blockHeight) {
+    if (stopCtl.check(sheet, r)) break;
+
+    var projectName = findProjectNameInRow_(sheet, r);
+    if (!isValidName(projectName)) continue;
+
+    var status = findStatusInBlock_(sheet, r);
+    if (!includeAll && isClosedBlock_(sheet, r)) {
+      skipped++;
+      continue;
+    }
+
+    var contactInfo = (typeof getContactBlockInfo_ === "function")
+      ? getContactBlockInfo_(sheet, r, blockHeight, projectName)
+      : { phone: "", normalized: "" };
+    var phone = contactInfo.normalized || contactInfo.phone || "";
+    var contactResult = inspectContactExists_(phone, contactsState);
+    if (contactResult.error) contactErrors++;
+
+    var driveResult = inspectDriveForBlock_(sheet, r, status, forceRefresh, cacheMap, logSh, driveLogRows, runId);
+    if (driveResult.error) driveErrors++;
+
+    rows.push([
+      new Date(),
+      r,
+      projectName,
+      status || "",
+      phone,
+      contactResult.text,
+      driveResult.text,
+      driveResult.url || "",
+      [contactResult.detail, driveResult.detail].filter(function(v) { return !!v; }).join(" / ")
+    ]);
+    checked++;
+  }
+
+  if (rows.length > 0) {
+    reportSheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+    reportSheet.autoResizeColumns(1, 9);
+  }
+  if (driveLogRows.length > 0) appendLogRows_(runLogSh, driveLogRows);
+
+  if (!isSilent) {
+    SpreadsheetApp.getUi().alert(
+      "✅ 드라이브 및 연락처 검사 완료\n" +
+      "검사 " + checked + " / 제외 " + skipped +
+      " / 드라이브 오류 " + driveErrors +
+      " / 연락처 오류 " + contactErrors +
+      "\n결과 시트: 진짜있나"
+    );
+  }
+
+  return { checked: checked, skipped: skipped, driveErrors: driveErrors, contactErrors: contactErrors };
+}
+
+function inspectContactExists_(phone, contactsState) {
+  if (!phone) return { text: "NO_PHONE", detail: "연락처 없음" };
+  if (!contactsState || !contactsState.ok) {
+    return {
+      text: "CHECK_UNAVAILABLE",
+      detail: "연락처 검사 불가: " + ((contactsState && contactsState.reason) || "unknown"),
+      error: true
+    };
+  }
+  if (typeof findContactsByPhone_ !== "function") {
+    return { text: "CHECK_UNAVAILABLE", detail: "findContactsByPhone_ 없음", error: true };
+  }
+
+  try {
+    var found = findContactsByPhone_(phone);
+    return {
+      text: (found && found.length > 0) ? "YES" : "NO",
+      detail: (found && found.length > 0) ? "연락처 있음" : "연락처 없음"
+    };
+  } catch (e) {
+    return {
+      text: "ERROR",
+      detail: "연락처 검사 오류: " + (e && e.message ? e.message : e),
+      error: true
+    };
+  }
+}
+
+function inspectDriveForBlock_(sheet, blockStartRow, status, forceRefresh, cacheMap, logSh, driveLogRows, runId) {
+  var folderCellInfos = findFolderUrlCells_(sheet, blockStartRow);
+  if (!folderCellInfos || folderCellInfos.length === 0) {
+    driveLogRows.push([runId, new Date(), blockStartRow, status || "", "", "SKIP_NO_URL", "R/S에서 링크를 찾지 못함"]);
+    return { text: "NO_URL", detail: "드라이브 URL 없음", url: "" };
+  }
+
+  var urls = [];
+  var hasAnyFiles = false;
+  var usedCache = false;
+  var errors = [];
+
+  for (var i = 0; i < folderCellInfos.length; i++) {
+    var folderCellInfo = folderCellInfos[i];
+    var urlCell = folderCellInfo.cell;
+    var folderUrl = folderCellInfo.url || "";
+    var prevBg = urlCell.getBackground();
+    urls.push(folderUrl);
+
+    if (!folderUrl || folderUrl.indexOf("drive.google.com") === -1) {
+      urlCell.setBackground("#ffffff");
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_BAD_URL", "drive URL 아님"]);
+      continue;
+    }
+
+    var folderId = extractIdFromUrl(folderUrl);
+    if (!folderId || folderId.indexOf("http") >= 0 || folderId.indexOf("/") >= 0) {
+      urlCell.setBackground("#ffffff");
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "SKIP_NO_ID", "폴더 ID 추출 실패"]);
+      continue;
+    }
+
+    try {
+      var cached = cacheMap[folderId];
+      var hasFiles;
+      var source = "SCAN";
+      if (!forceRefresh && cached && isCacheFresh_(cached.at)) {
+        hasFiles = !!cached.has;
+        source = "CACHE";
+        usedCache = true;
+      } else {
+        hasFiles = folderHasAnyFilesDeep_(folderId, 2);
+        if (cached) {
+          logSh.getRange(cached.row, 2, 1, 2).setValues([[hasFiles, new Date()]]);
+        } else {
+          logSh.appendRow([folderId, hasFiles, new Date()]);
+          cacheMap[folderId] = { row: logSh.getLastRow(), has: hasFiles, at: new Date() };
+        }
+      }
+
+      if (hasFiles) hasAnyFiles = true;
+      urlCell.setBackground(hasFiles ? "#ffff00" : "#ffffff");
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "UPDATED", (hasFiles ? "HAS_FILES" : "NO_FILES") + " / " + source]);
+    } catch (e) {
+      urlCell.setBackground(prevBg);
+      errors.push(e && e.message ? e.message : String(e));
+      driveLogRows.push([runId, new Date(), blockStartRow, status || "", folderUrl, "ERROR", String(e && e.message ? e.message : e)]);
+    }
+  }
+
+  if (errors.length > 0) {
+    return {
+      text: hasAnyFiles ? "HAS_FILES_WITH_ERROR" : "ERROR",
+      detail: errors.join(" | "),
+      url: urls.filter(function(v) { return !!v; }).join("\n"),
+      error: true
+    };
+  }
+
+  return {
+    text: hasAnyFiles ? "YES" : "NO",
+    detail: usedCache ? "캐시 사용" : "새로 검사",
+    url: urls.filter(function(v) { return !!v; }).join("\n")
+  };
+}
+
 /** === 내부: 드라이브 체크 본체 === */
 function driveCheckUpdate_(includeAll, forceRefresh, isSilent) {
   if (typeof DriveApp === "undefined") {

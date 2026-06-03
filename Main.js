@@ -1,7 +1,6 @@
 ﻿/** Main.gs
  * - 메뉴 복구
- * - 드라이브 체크: 열 때는 “진행만”
- * - 버튼으로 “전체 스캔(완료/취소 포함)” 제공
+ * - 드라이브/연락처 검사는 수동 버튼으로만 실행
  */
 
 function onOpen() {
@@ -11,7 +10,7 @@ function onOpen() {
     .addItem('🔨 현장 초기 세팅 (주소+폴더+파일+연락처)', 'runMasterSync')
     .addItem('🧩 ClickUp 동기화만 실행 (현재 블록)', 'runClickUpSyncOnly')
     .addSeparator()
-    .addItem('🟡 드라이브 체크 (진행만 / 열 때)', 'runDriveCheckActive')
+    .addItem('🟡 드라이브 및 연락처 검사', 'runDriveAndContactInspection')
     .addItem('🟡 드라이브 체크 (전체 스캔)', 'runDriveCheckAll')
     .addSeparator()
     .addItem('📅 금주 일정표 만들기', 'generateWeeklyCalendar')
@@ -26,11 +25,6 @@ function onOpen() {
   // 인테리어 DB 동기화 메뉴 추가
   try {
     addInteriorSyncMenu_();
-  } catch (e) {}
-
-  // ✅ “열 때만” 진행 체크 (조용히)
-  try {
-    runDriveCheckActive(true);
   } catch (e) {}
 
   // 단순 트리거(onOpen)는 30초 제한이라 무거운 DB 동기화를 실행하지 않습니다.
@@ -66,17 +60,6 @@ function runClickUpSyncOnly() {
 function runMasterSync() {
   var summary = runMasterSyncCore_();
   if (!summary.ok) return;
-
-  // 기존 로직을 먼저 끝낸 뒤, 방금 생성된(혹은 처리된) 블록 1개만 ClickUp 생성 시도
-  try {
-    runClickUpCreateForNewBlock_(summary);
-  } catch (e) {
-    // 기존 마스터 세팅은 성공했으므로 여기서는 안내만 표시
-    SpreadsheetApp.getUi().alert(
-      "⚠️ ClickUp 생성 단계에서 오류가 발생했습니다.\n" +
-      (e && e.message ? e.message : e)
-    );
-  }
 }
 
 /**
@@ -148,9 +131,6 @@ function runMasterSyncCore_() {
 
   ui.alert("🎉 작업 완료 리포트\n\n" + finalMsg);
 
-  // 끝나고 진행만 드라이브 체크
-  runDriveCheckActive(true);
-
   return {
     ok: true,
     skipped: false,
@@ -206,6 +186,14 @@ function runContactServiceDiagnostics() {
   }
   var summary = getContactsDiagnosticsSummary_();
   SpreadsheetApp.getUi().alert("🧭 연락처 서비스 진단\n\n" + summary);
+}
+
+function runDriveAndContactInspection() {
+  if (typeof inspectDriveAndContacts !== "function") {
+    SpreadsheetApp.getUi().alert("⚠️ 드라이브 및 연락처 검사 함수가 없습니다.");
+    return;
+  }
+  inspectDriveAndContacts(false, { includeAll: false, forceRefresh: false });
 }
 
 /** 드라이브 체크: 진행만(열 때) */
