@@ -9,6 +9,7 @@ const KAKAO_API_KEY = 'a5949a3368f9a0d1de67758e41bdd158';
  */
 const CONFIG = {
   SHEET_NAME: "통합관리시트",
+  COMPLETED_SHEET_NAME: "완료",
   REPORT_SHEET_NAME: "업무보고",
   CALENDAR_SHEET_NAME: "홈스타일_주간일정",
 
