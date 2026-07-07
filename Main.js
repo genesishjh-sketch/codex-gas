@@ -9,6 +9,7 @@ function onOpen() {
   ui.createMenu('🚀 스마트 통합 관리')
     .addItem('🔨 현장 초기 세팅 (주소+폴더+파일+연락처)', 'runMasterSync')
     .addItem('🧩 ClickUp 동기화만 실행 (현재 블록)', 'runClickUpSyncOnly')
+    .addItem('📄 물품리스트 복구 (현재 프로젝트)', 'runRecoverInventorySheetForCurrentProject')
     .addItem('✅ 완료 프로젝트 이동', 'runMoveCompletedProjects')
     .addSeparator()
     .addItem('🟡 드라이브 및 연락처 검사', 'runDriveAndContactInspection')
