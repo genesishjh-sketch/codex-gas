@@ -73,9 +73,9 @@ function createFoldersBatch(isSilent, force, options) {
         if (!file) {
           if (!templateId) throw new Error("물품리스트 템플릿 URL을 찾을 수 없습니다.");
           file = copyTemplateFile_(templateId, fileName, projectFolder);
-          setImportRangeFormula_(file.getId(), r, blockHeight);
+          addInventoryFinalizeWarnings_(failedList, r, setImportRangeFormula_(file.getId(), r, blockHeight));
         } else if (force) {
-          setImportRangeFormula_(file.getId(), r, blockHeight);
+          addInventoryFinalizeWarnings_(failedList, r, setImportRangeFormula_(file.getId(), r, blockHeight));
         }
         fileCell.setValue(file.getUrl());
       }
@@ -182,10 +182,12 @@ function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight) {
   var sourceSheetName = "통합관리시트";
   var sourceSs = SpreadsheetApp.openById(sourceSpreadsheetId);
   var sourceSheet = sourceSs.getSheetByName(sourceSheetName);
-  var sourceText = sourceSheet.getRange(blockStartRow, 3).getDisplayValue();
-  var fileSs = SpreadsheetApp.openById(spreadsheetId);
-  var targetSheet = fileSs.getSheets()[0];
-  targetSheet.getRange("B3").setValue(sourceText);
+  return finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow);
+}
+
+function addInventoryFinalizeWarnings_(failedList, blockStartRow, finalizeResult) {
+  if (!finalizeResult || !finalizeResult.warnings || finalizeResult.warnings.length === 0) return;
+  failedList.push("Row " + blockStartRow + ": 물품리스트 후처리 경고 - " + finalizeResult.warnings.join(" / "));
 }
 
 function getOrCreateSubFolder_(projectFolder, label) {

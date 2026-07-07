@@ -12,13 +12,26 @@ function runRecoverInventorySheetForCurrentProject() {
       CREATED: "템플릿에서 새 물품리스트 구글시트를 만들었습니다."
     };
 
-    ui.alert([
+    var msg = [
       "📄 물품리스트 복구 완료",
       "프로젝트: " + result.projectName,
       "시트: " + result.sheetName + " / Row " + result.blockStartRow,
       "결과: " + (actionText[result.action] || result.action),
       "링크: " + result.fileUrl
-    ].join("\n"));
+    ];
+
+    if (result.postProcess && result.postProcess.duplicateProtectionsRemoved > 0) {
+      msg.push("중복 보호범위 정리: " + result.postProcess.duplicateProtectionsRemoved + "개");
+    }
+    if (result.postProcess && result.postProcess.warnings && result.postProcess.warnings.length > 0) {
+      msg.push("");
+      msg.push("경고:");
+      result.postProcess.warnings.slice(0, 5).forEach(function(warning) {
+        msg.push("- " + warning);
+      });
+    }
+
+    ui.alert(msg.join("\n"));
   } catch (e) {
     ui.alert("❌ 물품리스트 복구 실패\n" + (e && e.message ? e.message : e));
   }
@@ -34,14 +47,15 @@ function recoverInventorySheetForCurrentProject_() {
   var existingFile = getActiveSpreadsheetFileFromUrl_(existingUrl);
 
   if (existingFile) {
-    setInventorySheetProjectName_(existingFile.getId(), sheet, blockStartRow);
+    var existingFinalize = finalizeInventorySheetFile_(existingFile.getId(), sheet, blockStartRow);
     fileCell.setValue(existingFile.getUrl());
     return {
       action: "EXISTS",
       sheetName: sheet.getName(),
       blockStartRow: blockStartRow,
       projectName: projectName,
-      fileUrl: existingFile.getUrl()
+      fileUrl: existingFile.getUrl(),
+      postProcess: existingFinalize
     };
   }
 
@@ -49,14 +63,15 @@ function recoverInventorySheetForCurrentProject_() {
   var fileName = buildProjectFileName_(sheet, blockStartRow);
   var relinkFile = findActiveSpreadsheetFileByName_(projectFolder, fileName);
   if (relinkFile) {
-    setInventorySheetProjectName_(relinkFile.getId(), sheet, blockStartRow);
+    var relinkFinalize = finalizeInventorySheetFile_(relinkFile.getId(), sheet, blockStartRow);
     fileCell.setValue(relinkFile.getUrl());
     return {
       action: "RELINKED",
       sheetName: sheet.getName(),
       blockStartRow: blockStartRow,
       projectName: projectName,
-      fileUrl: relinkFile.getUrl()
+      fileUrl: relinkFile.getUrl(),
+      postProcess: relinkFinalize
     };
   }
 
@@ -64,7 +79,7 @@ function recoverInventorySheetForCurrentProject_() {
   if (!templateId) throw new Error("G1에서 물품리스트 템플릿 URL을 찾을 수 없습니다.");
 
   var newFile = copyTemplateFile_(templateId, fileName, projectFolder);
-  setInventorySheetProjectName_(newFile.getId(), sheet, blockStartRow);
+  var newFinalize = finalizeInventorySheetFile_(newFile.getId(), sheet, blockStartRow);
   fileCell.setValue(newFile.getUrl());
 
   return {
@@ -72,7 +87,8 @@ function recoverInventorySheetForCurrentProject_() {
     sheetName: sheet.getName(),
     blockStartRow: blockStartRow,
     projectName: projectName,
-    fileUrl: newFile.getUrl()
+    fileUrl: newFile.getUrl(),
+    postProcess: newFinalize
   };
 }
 
@@ -221,4 +237,119 @@ function setInventorySheetProjectName_(spreadsheetId, sourceSheet, blockStartRow
   var fileSs = SpreadsheetApp.openById(spreadsheetId);
   var targetSheet = fileSs.getSheets()[0];
   targetSheet.getRange("B3").setValue(sourceText);
+}
+
+function finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow) {
+  var result = {
+    b3Updated: false,
+    duplicateProtectionsRemoved: 0,
+    warnings: []
+  };
+
+  try {
+    setInventorySheetProjectName_(spreadsheetId, sourceSheet, blockStartRow);
+    result.b3Updated = true;
+  } catch (e) {
+    result.warnings.push("B3 프로젝트명 입력 실패: " + (e && e.message ? e.message : e));
+  }
+
+  try {
+    var protectionResult = removeExactDuplicateRangeProtections_(spreadsheetId);
+    result.duplicateProtectionsRemoved = protectionResult.removed;
+    result.warnings = result.warnings.concat(protectionResult.warnings);
+  } catch (cleanupError) {
+    result.warnings.push("중복 보호범위 정리 실패: " + (cleanupError && cleanupError.message ? cleanupError.message : cleanupError));
+  }
+
+  return result;
+}
+
+function removeExactDuplicateRangeProtections_(spreadsheetId) {
+  var ss = SpreadsheetApp.openById(spreadsheetId);
+  var protections = ss.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  var seen = {};
+  var removed = 0;
+  var warnings = [];
+
+  for (var i = 0; i < protections.length; i++) {
+    var protection = protections[i];
+    var key = getRangeProtectionFingerprint_(protection);
+    if (!key) continue;
+
+    if (!seen[key]) {
+      seen[key] = true;
+      continue;
+    }
+
+    try {
+      if (typeof protection.canEdit === "function" && !protection.canEdit()) {
+        warnings.push("삭제 권한 없는 중복 보호범위 유지: " + describeRangeProtection_(protection));
+        continue;
+      }
+      protection.remove();
+      removed++;
+    } catch (e) {
+      warnings.push("중복 보호범위 삭제 실패: " + describeRangeProtection_(protection) + " - " + (e && e.message ? e.message : e));
+    }
+  }
+
+  return { removed: removed, warnings: warnings };
+}
+
+function getRangeProtectionFingerprint_(protection) {
+  try {
+    var range = protection.getRange();
+    if (!range) return "";
+
+    var sheet = range.getSheet();
+    var parts = [
+      sheet.getSheetId(),
+      range.getA1Notation(),
+      String(protection.getDescription() || ""),
+      protection.isWarningOnly() ? "warning" : "restricted"
+    ];
+
+    if (!protection.isWarningOnly()) {
+      var editorsFingerprint = getProtectionEditorsFingerprint_(protection);
+      var domainFingerprint = getProtectionDomainFingerprint_(protection);
+      if (editorsFingerprint === null || domainFingerprint === null) return "";
+      parts.push(editorsFingerprint);
+      parts.push(domainFingerprint);
+    }
+
+    return parts.join("\u001f");
+  } catch (e) {
+    return "";
+  }
+}
+
+function getProtectionEditorsFingerprint_(protection) {
+  try {
+    var editors = protection.getEditors() || [];
+    var emails = editors.map(function(editor) {
+      return (editor && editor.getEmail) ? editor.getEmail() : String(editor || "");
+    }).filter(function(email) {
+      return !!email;
+    }).sort();
+    return emails.join(",");
+  } catch (e) {
+    return null;
+  }
+}
+
+function getProtectionDomainFingerprint_(protection) {
+  try {
+    return protection.canDomainEdit() ? "domain_edit" : "domain_locked";
+  } catch (e) {
+    return null;
+  }
+}
+
+function describeRangeProtection_(protection) {
+  try {
+    var range = protection.getRange();
+    return range.getSheet().getName() + "!" + range.getA1Notation();
+  } catch (e) {
+    return "(알 수 없는 범위)";
+  }
 }
