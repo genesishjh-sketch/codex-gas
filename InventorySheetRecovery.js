@@ -23,6 +23,9 @@ function runRecoverInventorySheetForCurrentProject() {
     if (result.postProcess && result.postProcess.duplicateProtectionsRemoved > 0) {
       msg.push("중복 보호범위 정리: " + result.postProcess.duplicateProtectionsRemoved + "개");
     }
+    if (result.postProcess && result.postProcess.linkEditorSharingUpdated) {
+      msg.push("공유권한: 링크가 있는 모든 사용자 편집자");
+    }
     if (result.postProcess && result.postProcess.warnings && result.postProcess.warnings.length > 0) {
       msg.push("");
       msg.push("경고:");
@@ -79,7 +82,7 @@ function recoverInventorySheetForCurrentProject_() {
   if (!templateId) throw new Error("G1에서 물품리스트 템플릿 URL을 찾을 수 없습니다.");
 
   var newFile = copyTemplateFile_(templateId, fileName, projectFolder);
-  var newFinalize = finalizeInventorySheetFile_(newFile.getId(), sheet, blockStartRow);
+  var newFinalize = finalizeInventorySheetFile_(newFile.getId(), sheet, blockStartRow, { setLinkEditorSharing: true });
   fileCell.setValue(newFile.getUrl());
 
   return {
@@ -239,12 +242,23 @@ function setInventorySheetProjectName_(spreadsheetId, sourceSheet, blockStartRow
   targetSheet.getRange("B3").setValue(sourceText);
 }
 
-function finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow) {
+function finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow, options) {
+  options = options || {};
   var result = {
     b3Updated: false,
     duplicateProtectionsRemoved: 0,
+    linkEditorSharingUpdated: false,
     warnings: []
   };
+
+  if (options.setLinkEditorSharing) {
+    try {
+      setInventorySheetLinkEditorSharing_(spreadsheetId);
+      result.linkEditorSharingUpdated = true;
+    } catch (sharingError) {
+      result.warnings.push("공유권한 변경 실패: " + (sharingError && sharingError.message ? sharingError.message : sharingError));
+    }
+  }
 
   try {
     setInventorySheetProjectName_(spreadsheetId, sourceSheet, blockStartRow);
@@ -262,6 +276,11 @@ function finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow) 
   }
 
   return result;
+}
+
+function setInventorySheetLinkEditorSharing_(spreadsheetId) {
+  var file = DriveApp.getFileById(spreadsheetId);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
 }
 
 function removeExactDuplicateRangeProtections_(spreadsheetId) {
