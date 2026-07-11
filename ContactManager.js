@@ -428,7 +428,7 @@ function syncContactsBatch(isSilent, options) {
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
-  if (lastRow < CONFIG.START_ROW) return { summary: "데이터 없음" };
+  if (lastRow < CONFIG.START_ROW) return { ok: true, summary: "데이터 없음", timedOut: false, failed: 0 };
 
   var contactsState = getContactsServiceState_();
   if (!contactsState.ok) {
@@ -436,7 +436,7 @@ function syncContactsBatch(isSilent, options) {
     if (!isSilent) {
       SpreadsheetApp.getUi().alert(unavailableMessage);
     }
-    return { summary: unavailableMessage };
+    return { ok: false, summary: unavailableMessage, timedOut: false, failed: 0 };
   }
 
   var stopCtl = makeStopController_();
@@ -566,6 +566,7 @@ function syncContactsBatch(isSilent, options) {
     logSheet.getRange(start, 1, pendingAppends.length, 9).setValues(pendingAppends);
   }
 
+  var hasAnyFailures = updateBatchFailureState_(scriptProps, cursorKey, failed > 0, timedOut);
   if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
 
   var summary =
@@ -585,7 +586,7 @@ function syncContactsBatch(isSilent, options) {
   }
 
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 연락처 동기화 완료\n" + summary);
-  return { summary: summary, timedOut: timedOut };
+  return { ok: !hasAnyFailures, summary: summary, timedOut: timedOut, failed: failed };
 }
 
 /**

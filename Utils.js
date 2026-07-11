@@ -295,6 +295,23 @@ function makeRuntimeBudget_(maxRuntimeMs) {
   };
 }
 
+/** 분할 실행 중 발생한 실패를 다음 이어하기 실행까지 보존한다. */
+function updateBatchFailureState_(scriptProps, cursorKey, hasFailure, timedOut) {
+  if (!scriptProps || !cursorKey) return !!hasFailure;
+
+  var failureKey = cursorKey + "_HAD_FAILURE";
+  var hadFailure = scriptProps.getProperty(failureKey) === "1";
+  var combined = hadFailure || !!hasFailure;
+
+  if (timedOut) {
+    if (combined) scriptProps.setProperty(failureKey, "1");
+  } else {
+    scriptProps.deleteProperty(failureKey);
+  }
+
+  return combined;
+}
+
 /** =========================
  *  주소 문자열 분리
  *  - base: 지번까지 ("... 719-8")

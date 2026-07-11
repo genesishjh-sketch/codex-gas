@@ -81,13 +81,15 @@ function runMasterSyncCore_() {
     }
   }
 
-  var renumberResult = renumberByBalanceDateCore_({ silent: true });
-  if (!renumberResult.ok) {
-    ui.alert("❌ [1단계] 잔금일 기준 번호 재정렬 실패\n" + (renumberResult.message || "알 수 없는 오류"));
-    return { ok: false, message: renumberResult.message || "renumber_failed" };
+  var sheet;
+  try {
+    sheet = getMainSheet_();
+  } catch (e) {
+    var sheetError = e && e.message ? e.message : e;
+    ui.alert("❌ 초기 세팅 실패\n" + sheetError);
+    return { ok: false, message: String(sheetError || "sheet_not_found") };
   }
 
-  var sheet = getMainSheet_();
   var pendingRows = collectMasterSyncPendingRows_(sheet);
   if (pendingRows.length === 0) {
     ui.alert("ℹ️ 신규 세팅 대상이 없습니다.\n(AA 완료마커가 없는 프로젝트만 처리됩니다.)");
@@ -101,30 +103,38 @@ function runMasterSyncCore_() {
 
   var addrResult = (typeof updateAddressesBatch === "function")
     ? updateAddressesBatch(true, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_ADDR_CURSOR", targetRowsMap: targetRowsMap })
-    : { summary: "주소 변환 함수 없음", failedList: [], timedOut: false };
+    : { ok: false, summary: "주소 변환 함수 없음", failedList: [], timedOut: false };
 
   var folderResult = (typeof createFoldersBatch === "function")
     ? createFoldersBatch(true, false, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_FOLDER_CURSOR", targetRowsMap: targetRowsMap })
-    : { summary: "폴더 생성 함수 없음", successList: [], failedList: [], timedOut: false };
+    : { ok: false, summary: "폴더 생성 함수 없음", successList: [], failedList: [], warningsList: [], timedOut: false };
 
   var contactResult = (typeof syncContactsBatch === "function")
     ? syncContactsBatch(true, { maxRuntimeMs: batchBudgetMs, cursorKey: "MASTER_CONTACT_CURSOR", targetRowsMap: targetRowsMap })
-    : { summary: "연락처 동기화 함수 없음", timedOut: false };
+    : { ok: false, summary: "연락처 동기화 함수 없음", timedOut: false };
 
-  var finalMsg = "✅ [잔금일 기준 번호 재정렬]\n" + (renumberResult.message || "") + "\n";
-  finalMsg += "\n✅ [주소 변환]\n" + (addrResult.summary || "") + "\n";
+  var finalMsg = "✅ [주소 변환]\n" + (addrResult.summary || "") + "\n";
   if (addrResult.failedList && addrResult.failedList.length > 0) finalMsg += "❌ 실패:\n" + addrResult.failedList.join("\n") + "\n";
 
   finalMsg += "\n✅ [폴더/파일]\n" + (folderResult.summary || "") + "\n";
   if (folderResult.successList && folderResult.successList.length > 0) finalMsg += "\n✨ 신규 세팅:\n" + folderResult.successList.join("\n") + "\n";
   if (folderResult.failedList && folderResult.failedList.length > 0) finalMsg += "\n❌ 실패:\n" + folderResult.failedList.join("\n") + "\n";
+  if (folderResult.warningsList && folderResult.warningsList.length > 0) finalMsg += "\n⚠️ 경고:\n" + folderResult.warningsList.join("\n") + "\n";
 
   finalMsg += "\n✅ [연락처]\n" + (contactResult.summary || "") + "\n";
 
   var hasContinuation = !!(addrResult.timedOut || folderResult.timedOut || contactResult.timedOut);
+  var hasFailures = !!(
+    addrResult.ok === false ||
+    folderResult.ok === false ||
+    contactResult.ok === false
+  );
   if (hasContinuation) {
     finalMsg += "\n⚠️ 일부 단계가 시간예산에 도달해 중간 저장되었습니다.\n";
     finalMsg += "같은 메뉴를 다시 실행하면 중단 지점부터 이어서 처리합니다.\n";
+  } else if (hasFailures) {
+    finalMsg += "\n⚠️ 실패한 단계가 있어 AA열 완료마커를 기록하지 않았습니다.\n";
+    finalMsg += "문제를 확인한 뒤 같은 메뉴를 다시 실행하면 재처리됩니다.\n";
   } else {
     markMasterSyncRowsDone_(sheet, pendingRows);
     finalMsg += "\n✅ AA열 완료마커를 기록했습니다.\n";
@@ -137,8 +147,9 @@ function runMasterSyncCore_() {
     ok: true,
     skipped: false,
     hasContinuation: hasContinuation,
+    hasFailures: hasFailures,
     pendingRows: pendingRows.slice(),
-    completedRows: hasContinuation ? [] : pendingRows.slice(),
+    completedRows: (hasContinuation || hasFailures) ? [] : pendingRows.slice(),
     sheetName: sheet.getName()
   };
 }
@@ -214,8 +225,8 @@ function runDriveCheckAll() {
     SpreadsheetApp.getUi().alert("⚠️ checkFolderFilesColor 함수가 없습니다.");
     return;
   }
-  // 강제 재검사(정확)
-  checkFolderFilesColor(false, { includeAll: true, forceRefresh: true });
+  // 전체 탭/상태를 보되, 이미 노란색인 셀은 건너뛴다.
+  checkFolderFilesColor(false, { includeAll: true, forceRefresh: false });
 }
 
 /** 실행 진단: 왜 "아무것도 안 됨"인지 빠르게 요약 */
@@ -402,22 +413,52 @@ function renumberByBalanceDateCore_(options) {
     sheet.getRange(block.row, CONFIG.POS_NO.col).setValue(value);
   });
 
-  try {
-    sortGroupsByHierarchy();
-  } catch (e) {
-    var sortErrorMsg = "그룹 정렬 중 오류가 발생했습니다.\n" + (e && e.message ? e.message : e);
-    if (!silent) ui.alert("❌ " + sortErrorMsg);
-    return { ok: false, message: sortErrorMsg };
+  var skippedGroupSort = false;
+  var skipReason = "";
+  if (options.skipGroupSort) {
+    skippedGroupSort = true;
+    skipReason = "요청에 따라 블록 위치 정렬을 건너뜀";
+  } else if (hasActiveBasicFilter_(sheet)) {
+    skippedGroupSort = true;
+    skipReason = "필터가 켜져 있어 블록 위치 정렬을 건너뜀";
+  } else {
+    try {
+      sortGroupsByHierarchy();
+    } catch (e) {
+      var sortErrorMsg = "그룹 정렬 중 오류가 발생했습니다.\n" + (e && e.message ? e.message : e);
+      if (!silent) ui.alert("❌ " + sortErrorMsg);
+      return { ok: false, message: sortErrorMsg };
+    }
   }
 
   var successMsg = "잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건";
+  if (skippedGroupSort) successMsg += "\n⚠️ " + skipReason;
   if (!silent) ui.alert("✅ " + successMsg);
-  return { ok: true, message: successMsg, blocksCount: blocks.length, datedBlocksCount: datedBlocks.length };
+  return {
+    ok: true,
+    message: successMsg,
+    blocksCount: blocks.length,
+    datedBlocksCount: datedBlocks.length,
+    skippedGroupSort: skippedGroupSort,
+    skipReason: skipReason
+  };
+}
+
+function hasActiveBasicFilter_(sheet) {
+  try {
+    return !!(sheet && sheet.getFilter && sheet.getFilter());
+  } catch (e) {
+    return false;
+  }
 }
 
 /** 그룹(9행) 단위로 우선순위에 따라 정렬 */
 function sortGroupsByHierarchy() {
   var sheet = getMainSheet_();
+  if (hasActiveBasicFilter_(sheet)) {
+    return { sorted: false, skipped: true, reason: "active_filter" };
+  }
+
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
   if (lastRow < CONFIG.START_ROW) return;
@@ -475,24 +516,66 @@ function sortGroupsByHierarchy() {
   // 원본을 임시 영역으로 복사한 뒤 정렬 순서대로 다시 복사한다.
   var totalRows = groups.length * blockHeight;
   var tempStartRow = lastRow + 1;
-  sheet.insertRowsAfter(lastRow, totalRows);
+  var tempInserted = false;
+  var targetWriteStarted = false;
+  var keepTempBackup = false;
 
-  var tempRow = tempStartRow;
-  groups.forEach(function(group) {
-    var source = sheet.getRange(group.startRow, 1, blockHeight, lastCol);
-    var target = sheet.getRange(tempRow, 1, blockHeight, lastCol);
-    source.copyTo(target, { contentsOnly: false });
-    tempRow += blockHeight;
-  });
+  try {
+    sheet.insertRowsAfter(lastRow, totalRows);
+    tempInserted = true;
 
-  var targetRow = CONFIG.START_ROW;
-  sortedGroups.forEach(function(group) {
-    var sourceRow = tempStartRow + group.originalIndex * blockHeight;
-    var source = sheet.getRange(sourceRow, 1, blockHeight, lastCol);
-    var target = sheet.getRange(targetRow, 1, blockHeight, lastCol);
-    source.copyTo(target, { contentsOnly: false });
-    targetRow += blockHeight;
-  });
+    var tempRow = tempStartRow;
+    groups.forEach(function(group) {
+      var source = sheet.getRange(group.startRow, 1, blockHeight, lastCol);
+      var target = sheet.getRange(tempRow, 1, blockHeight, lastCol);
+      source.copyTo(target, { contentsOnly: false });
+      tempRow += blockHeight;
+    });
 
-  sheet.deleteRows(tempStartRow, totalRows);
+    targetWriteStarted = true;
+    var targetRow = CONFIG.START_ROW;
+    sortedGroups.forEach(function(group) {
+      var sourceRow = tempStartRow + group.originalIndex * blockHeight;
+      var source = sheet.getRange(sourceRow, 1, blockHeight, lastCol);
+      var target = sheet.getRange(targetRow, 1, blockHeight, lastCol);
+      source.copyTo(target, { contentsOnly: false });
+      targetRow += blockHeight;
+    });
+    targetWriteStarted = false;
+  } catch (sortError) {
+    if (tempInserted && targetWriteStarted) {
+      try {
+        groups.forEach(function(group) {
+          var backupRow = tempStartRow + group.originalIndex * blockHeight;
+          sheet.getRange(backupRow, 1, blockHeight, lastCol).copyTo(
+            sheet.getRange(group.startRow, 1, blockHeight, lastCol),
+            { contentsOnly: false }
+          );
+        });
+        targetWriteStarted = false;
+      } catch (restoreError) {
+        keepTempBackup = true;
+        throw new Error(
+          (sortError && sortError.message ? sortError.message : sortError) +
+          "\n원본 복구도 실패했습니다. 임시 백업은 Row " + tempStartRow + "부터 남겨두었습니다. " +
+          (restoreError && restoreError.message ? restoreError.message : restoreError)
+        );
+      }
+    }
+    throw sortError;
+  } finally {
+    if (tempInserted && !keepTempBackup) {
+      try {
+        sheet.deleteRows(tempStartRow, totalRows);
+      } catch (cleanupError) {
+        // 정렬 결과는 보존하고, 임시행 정리 실패는 호출자에게 명확히 알린다.
+        throw new Error(
+          "정렬 후 임시행 정리에 실패했습니다. Row " + tempStartRow + "부터 확인해주세요. " +
+          (cleanupError && cleanupError.message ? cleanupError.message : cleanupError)
+        );
+      }
+    }
+  }
+
+  return { sorted: true, skipped: false };
 }

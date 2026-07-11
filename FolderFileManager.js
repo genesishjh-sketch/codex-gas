@@ -14,7 +14,9 @@ function createFoldersBatch(isSilent, force, options) {
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
-  if (lastRow < CONFIG.START_ROW) return { summary: "No data", successList: [], failedList: [] };
+  if (lastRow < CONFIG.START_ROW) {
+    return { ok: true, summary: "No data", successList: [], failedList: [], warningsList: [], timedOut: false };
+  }
 
   var stopCtl = makeStopController_();
   var spreadsheetParentFolder = DriveApp.getFileById(ss.getId()).getParents().next();
@@ -26,6 +28,7 @@ function createFoldersBatch(isSilent, force, options) {
   var skipCount = 0;
   var successList = [];
   var failedList = [];
+  var warningsList = [];
 
   var labelCol = (CONFIG && CONFIG.POS_FOLDER_LABEL_COL) || 18; // R
   var urlCol = (CONFIG && (CONFIG.POS_FOLDER_URL_COL || CONFIG.DRIVE_MARK_COL)) || 19; // S
@@ -73,9 +76,9 @@ function createFoldersBatch(isSilent, force, options) {
         if (!file) {
           if (!templateId) throw new Error("물품리스트 템플릿 URL을 찾을 수 없습니다.");
           file = copyTemplateFile_(templateId, fileName, projectFolder);
-          addInventoryFinalizeWarnings_(failedList, r, setImportRangeFormula_(file.getId(), r, blockHeight, { setLinkEditorSharing: true }));
+          addInventoryFinalizeWarnings_(warningsList, r, setImportRangeFormula_(file.getId(), r, blockHeight, { setLinkEditorSharing: true }));
         } else if (force) {
-          addInventoryFinalizeWarnings_(failedList, r, setImportRangeFormula_(file.getId(), r, blockHeight));
+          addInventoryFinalizeWarnings_(warningsList, r, setImportRangeFormula_(file.getId(), r, blockHeight));
         }
         fileCell.setValue(file.getUrl());
       }
@@ -111,17 +114,25 @@ function createFoldersBatch(isSilent, force, options) {
     }
   }
 
+  var hasAnyFailures = updateBatchFailureState_(scriptProps, cursorKey, failedList.length > 0, timedOut);
   if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
 
   var summary = "Processed " + processedCount + "/ Skipped " + skipCount;
   if (timedOut) summary += " / ⏱️ 시간예산 도달(이어하기 필요)";
   if (!isSilent) SpreadsheetApp.getUi().alert("Folder create done\n" + summary);
 
-  return { summary: summary, successList: successList, failedList: failedList, timedOut: timedOut };
+  return {
+    ok: !hasAnyFailures,
+    summary: summary,
+    successList: successList,
+    failedList: failedList,
+    warningsList: warningsList,
+    timedOut: timedOut
+  };
 }
 
 function getOrCreateProjectFolder_(parentFolder, sheet, blockStartRow) {
-  var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, 3);
+  var nameCell = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, CONFIG.POS_NAME.col);
 
   var nameVal = (nameCell.getDisplayValue() || "").toString().trim();
 
@@ -169,7 +180,18 @@ function buildProjectFileName_(sheet, blockStartRow) {
 
 function findFileByName_(folder, fileName) {
   var files = folder.getFilesByName(fileName);
-  return files.hasNext() ? files.next() : null;
+  while (files.hasNext()) {
+    var file = files.next();
+    try {
+      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+      if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+      SpreadsheetApp.openById(file.getId());
+      return file;
+    } catch (e) {
+      // 삭제됐거나 접근할 수 없는 동명 파일은 건너뛴다.
+    }
+  }
+  return null;
 }
 
 function copyTemplateFile_(templateId, fileName, parentFolder) {
@@ -178,16 +200,13 @@ function copyTemplateFile_(templateId, fileName, parentFolder) {
 }
 
 function setImportRangeFormula_(spreadsheetId, blockStartRow, blockHeight, options) {
-  var sourceSpreadsheetId = "1GgdT1H-IEWWJDpuD14IURuZZWL9y_1smM9eUSXQMPoo";
-  var sourceSheetName = "통합관리시트";
-  var sourceSs = SpreadsheetApp.openById(sourceSpreadsheetId);
-  var sourceSheet = sourceSs.getSheetByName(sourceSheetName);
+  var sourceSheet = getMainSheet_();
   return finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow, options);
 }
 
-function addInventoryFinalizeWarnings_(failedList, blockStartRow, finalizeResult) {
+function addInventoryFinalizeWarnings_(warningsList, blockStartRow, finalizeResult) {
   if (!finalizeResult || !finalizeResult.warnings || finalizeResult.warnings.length === 0) return;
-  failedList.push("Row " + blockStartRow + ": 물품리스트 후처리 경고 - " + finalizeResult.warnings.join(" / "));
+  warningsList.push("Row " + blockStartRow + ": 물품리스트 후처리 경고 - " + finalizeResult.warnings.join(" / "));
 }
 
 function getOrCreateSubFolder_(projectFolder, label) {

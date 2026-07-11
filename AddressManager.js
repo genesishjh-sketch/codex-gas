@@ -14,7 +14,7 @@ function updateAddressesBatch(isSilent, options) {
   var sheet = getMainSheet_();
   var blockHeight = getBlockHeight_(sheet);
   var lastRow = sheet.getLastRow();
-  if (lastRow < CONFIG.START_ROW) return { summary: "데이터 없음", failedList: [] };
+  if (lastRow < CONFIG.START_ROW) return { ok: true, summary: "데이터 없음", failedList: [], timedOut: false };
 
   var stopCtl = makeStopController_();
 
@@ -111,6 +111,7 @@ function updateAddressesBatch(isSilent, options) {
     }
   }
 
+  var hasAnyFailures = updateBatchFailureState_(scriptProps, cursorKey, failCount > 0, timedOut);
   if (!timedOut && scriptProps) scriptProps.deleteProperty(cursorKey);
 
   var summary = "신규 " + successCount + "건 / 이미완료 " + skipCount + "건 / 실패 " + failCount + "건";
@@ -118,6 +119,7 @@ function updateAddressesBatch(isSilent, options) {
 
   if (!isSilent) SpreadsheetApp.getUi().alert("✅ 주소 변환 완료" + (timedOut ? " (일부 처리)" : ""));
   return {
+    ok: !hasAnyFailures,
     summary: summary,
     failedList: failedList,
     timedOut: timedOut

@@ -609,6 +609,11 @@ function findStatusInBlock_(sheet, blockStartRow) {
     "진행"
   ];
 
+  // 현재 구조의 공식 상태 셀(G열)을 먼저 사용해 본문 텍스트 오인식을 줄인다.
+  var directStatus = sheet.getRange(blockStartRow, 7).getDisplayValue();
+  directStatus = String(directStatus || "").trim();
+  if (candidates.indexOf(directStatus) >= 0) return directStatus;
+
   for (var i = 0; i < candidates.length; i++) {
     var target = candidates[i];
     for (var r = 0; r < vals.length; r++) {
@@ -633,13 +638,16 @@ function isActiveStatusForDrive_(status) {
 }
 
 function findProjectNameInRow_(sheet, blockStartRow) {
+  var configuredName = sheet.getRange(blockStartRow + CONFIG.POS_NAME.row, CONFIG.POS_NAME.col).getDisplayValue();
+  configuredName = String(configuredName || "").trim();
+  if (configuredName) return configuredName;
+
   var maxCols = Math.min(sheet.getLastColumn(), 40);
   var vals = sheet.getRange(blockStartRow, 1, 1, maxCols).getDisplayValues()[0];
   for (var i = 0; i < vals.length; i++) {
     var s = (vals[i] || "").toString().trim();
     if (!s) continue;
-    // 프로젝트명 패턴(멱살반/반멱살/스타일링대행 등) 우선
-    if (s.indexOf("멱살") >= 0 || s.indexOf("스타일") >= 0) return s;
+    if (isValidName(s)) return s;
   }
   // fallback: 첫 번째 non-empty
   for (var j = 0; j < vals.length; j++) {
