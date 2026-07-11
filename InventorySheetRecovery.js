@@ -50,7 +50,7 @@ function recoverInventorySheetForCurrentProject_() {
   var existingFile = getActiveSpreadsheetFileFromUrl_(existingUrl);
 
   if (existingFile) {
-    var existingFinalize = finalizeInventorySheetFile_(existingFile.getId(), sheet, blockStartRow);
+    var existingFinalize = finalizeInventorySheetFile_(existingFile.getId(), sheet, blockStartRow, { setLinkEditorSharing: true });
     fileCell.setValue(existingFile.getUrl());
     return {
       action: "EXISTS",
@@ -66,7 +66,7 @@ function recoverInventorySheetForCurrentProject_() {
   var fileName = buildProjectFileName_(sheet, blockStartRow);
   var relinkFile = findActiveSpreadsheetFileByName_(projectFolder, fileName);
   if (relinkFile) {
-    var relinkFinalize = finalizeInventorySheetFile_(relinkFile.getId(), sheet, blockStartRow);
+    var relinkFinalize = finalizeInventorySheetFile_(relinkFile.getId(), sheet, blockStartRow, { setLinkEditorSharing: true });
     fileCell.setValue(relinkFile.getUrl());
     return {
       action: "RELINKED",
@@ -279,8 +279,71 @@ function finalizeInventorySheetFile_(spreadsheetId, sourceSheet, blockStartRow, 
 }
 
 function setInventorySheetLinkEditorSharing_(spreadsheetId) {
-  var file = DriveApp.getFileById(spreadsheetId);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  var driveAppError = null;
+  try {
+    var file = DriveApp.getFileById(spreadsheetId);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+    return;
+  } catch (e) {
+    driveAppError = e;
+  }
+
+  try {
+    setInventorySheetLinkEditorSharingViaDriveApi_(spreadsheetId);
+  } catch (apiError) {
+    throw new Error(
+      "DriveApp: " + (driveAppError && driveAppError.message ? driveAppError.message : driveAppError) +
+      " / Drive API: " + (apiError && apiError.message ? apiError.message : apiError)
+    );
+  }
+}
+
+function setInventorySheetLinkEditorSharingViaDriveApi_(spreadsheetId) {
+  if (typeof Drive === "undefined" || !Drive.Permissions) {
+    throw new Error("고급 Drive 서비스가 활성화되지 않았습니다.");
+  }
+
+  var options = {
+    supportsAllDrives: true,
+    fields: "permissions(id,type,role,allowFileDiscovery)"
+  };
+  var response = Drive.Permissions.list(spreadsheetId, options);
+  var permissions = (response && response.permissions) || [];
+  var anyonePermission = null;
+
+  for (var i = 0; i < permissions.length; i++) {
+    if (permissions[i] && permissions[i].type === "anyone") {
+      anyonePermission = permissions[i];
+      break;
+    }
+  }
+
+  if (anyonePermission && anyonePermission.role !== "writer") {
+    Drive.Permissions.update(
+      { role: "writer" },
+      spreadsheetId,
+      anyonePermission.id,
+      { supportsAllDrives: true }
+    );
+  } else if (!anyonePermission) {
+    Drive.Permissions.create(
+      { type: "anyone", role: "writer", allowFileDiscovery: false },
+      spreadsheetId,
+      { supportsAllDrives: true }
+    );
+  }
+
+  var verified = Drive.Permissions.list(spreadsheetId, options);
+  var verifiedPermissions = (verified && verified.permissions) || [];
+  var isWriter = verifiedPermissions.some(function(permission) {
+    return permission && permission.type === "anyone" && permission.role === "writer";
+  });
+  if (!isWriter) throw new Error("링크 편집자 권한이 확인되지 않았습니다.");
+}
+
+function repairInventorySheetLinkSharingById(spreadsheetId) {
+  setInventorySheetLinkEditorSharing_(spreadsheetId);
+  return { ok: true, spreadsheetId: spreadsheetId };
 }
 
 function removeExactDuplicateRangeProtections_(spreadsheetId) {

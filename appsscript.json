@@ -6,6 +6,11 @@
         "userSymbol": "People",
         "version": "v1",
         "serviceId": "peopleapi"
+      },
+      {
+        "userSymbol": "Drive",
+        "version": "v3",
+        "serviceId": "drive"
       }
     ]
   },
