@@ -325,7 +325,7 @@ function splitAddressExtra_(raw) {
 
   // 도로명: "학동로4길45", "학동로4길 45" 모두 "학동로4길 45"로 검색.
   // "원효로1가 51-17" 같은 지번 법정동은 건물번호 뒤에 공백/끝이 없어 이 규칙에서 제외된다.
-  var road = s.match(/^(.+(?:대로|로|길))\s*(\d+(?:-\d+)?)(?:\s+(.*)|$)/);
+  var road = s.match(/^(.+(?:대로|로|길))\s*(\d+(?:-\d+)?)(?=\s|[（(,，]|$)(.*)$/);
   if (road) {
     return {
       base: (String(road[1] || "").trim() + " " + String(road[2] || "").trim()).replace(/\s+/g, " ").trim(),
@@ -349,7 +349,11 @@ function splitAddressExtra_(raw) {
 }
 
 function cleanAddressExtra_(value) {
-  return String(value || "").replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .replace(/[（(][^）)]*[）)]/g, " ")
+    .replace(/^[\s,，;:]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** 카카오 결과 정리용: 주소 앞쪽 광역단위 제거 */
