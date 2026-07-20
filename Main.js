@@ -90,6 +90,19 @@ function runMasterSyncCore_() {
     return { ok: false, message: String(sheetError || "sheet_not_found") };
   }
 
+  // C열 프로젝트명 수식이 B열 번호를 참조하므로 대상 수집 전에 번호를 채운다.
+  // 블록 위치는 건드리지 않고, 잔금일 기준 번호만 갱신한다.
+  var renumberResult = renumberByBalanceDateCore_({
+    silent: true,
+    skipGroupSort: true
+  });
+  if (!renumberResult.ok) {
+    var renumberError = renumberResult.message || "알 수 없는 오류";
+    ui.alert("❌ 초기 세팅 실패\n프로젝트 번호 생성 중 오류가 발생했습니다.\n" + renumberError);
+    return { ok: false, message: String(renumberError || "renumber_failed") };
+  }
+  SpreadsheetApp.flush();
+
   var pendingRows = collectMasterSyncPendingRows_(sheet);
   if (pendingRows.length === 0) {
     ui.alert("ℹ️ 신규 세팅 대상이 없습니다.\n(AA 완료마커가 없는 프로젝트만 처리됩니다.)");
@@ -350,7 +363,6 @@ function renumberByBalanceDateCore_(options) {
     return { ok: true, message: noDataMsg, blocksCount: 0, datedBlocksCount: 0 };
   }
 
-  var stopCtl = makeStopController_();
   var blocks = [];
   var datedBlocks = [];
 
@@ -364,17 +376,35 @@ function renumberByBalanceDateCore_(options) {
     return null;
   }
 
-  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
-    if (stopCtl.check(sheet, r)) break;
+  // B/C가 비어 있는 신규 블록도 D열 고객명/잔금일로 찾아야 한다.
+  // 한 번에 읽어 서비스 호출을 줄이고, 뒤쪽 빈 템플릿 블록은 제외한다.
+  var scanStartRow = CONFIG.START_ROW;
+  var scanRowCount = lastRow - scanStartRow + 1;
+  var scanValues = sheet.getRange(scanStartRow, 2, scanRowCount, 3).getValues(); // B:D
 
-    var d5 = sheet.getRange(r + 1, 4).getValue(); // D5
-    var d9 = sheet.getRange(r + 5, 4).getValue(); // D9
+  function scanValue_(row, relativeCol) {
+    var index = row - scanStartRow;
+    if (index < 0 || index >= scanValues.length) return "";
+    return scanValues[index][relativeCol];
+  }
+
+  for (var r = CONFIG.START_ROW; r <= lastRow; r += blockHeight) {
+    var currentNo = scanValue_(r, 0); // B
+    var currentName = scanValue_(r, 1); // C
+    var d5 = scanValue_(r + 1, 2); // D5: 고객명
+    var d9 = scanValue_(r + 5, 2); // D9: 잔금일
+
+    if (isEmpty_(currentNo) && isEmpty_(currentName) && isEmpty_(d5) && isEmpty_(d9)) {
+      continue;
+    }
+
     var dateKey = toDateKey_(d9);
     var hasD5 = !isEmpty_(d5);
     var hasD9 = !isEmpty_(d9);
 
     var entry = {
       row: r,
+      currentNo: currentNo,
       d5: d5,
       d9: d9,
       dateKey: dateKey,
@@ -401,6 +431,7 @@ function renumberByBalanceDateCore_(options) {
     sequenceMap[datedBlocks[i].row] = String(i + 1).padStart(3, "0");
   }
 
+  var updatedCount = 0;
   blocks.forEach(function(block) {
     var value = "";
     if (block.hasD9) {
@@ -410,7 +441,15 @@ function renumberByBalanceDateCore_(options) {
     } else {
       value = "";
     }
+
+    var currentValue = String(block.currentNo || "").trim();
+    if (/^\d+$/.test(currentValue)) {
+      currentValue = String(Number(currentValue)).padStart(3, "0");
+    }
+    if (currentValue === value) return;
+
     sheet.getRange(block.row, CONFIG.POS_NO.col).setValue(value);
+    updatedCount++;
   });
 
   var skippedGroupSort = false;
@@ -431,7 +470,7 @@ function renumberByBalanceDateCore_(options) {
     }
   }
 
-  var successMsg = "잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건";
+  var successMsg = "잔금일 기준 번호 재정렬 완료\n대상: " + blocks.length + "건 / 잔금일: " + datedBlocks.length + "건 / 변경: " + updatedCount + "건";
   if (skippedGroupSort) successMsg += "\n⚠️ " + skipReason;
   if (!silent) ui.alert("✅ " + successMsg);
   return {
@@ -439,6 +478,7 @@ function renumberByBalanceDateCore_(options) {
     message: successMsg,
     blocksCount: blocks.length,
     datedBlocksCount: datedBlocks.length,
+    updatedCount: updatedCount,
     skippedGroupSort: skippedGroupSort,
     skipReason: skipReason
   };
